@@ -67,6 +67,7 @@ let stepSoundTimer = 0;
 const player = {
   x: 0, y: 0, z: 31.5, yaw: 0, pitch: 0,
   velY: 0, grounded: true, coyote: .1, jumpBuf: 0, landDip: 0,
+  crouchToggle: false, crouchBlend: 0, crouched: false,
   hp: 100, shield: 50, alive: true, respawnTimer: 0, spawnShield: 1.5, outOfCombat: 0,
   kills: 0, deaths: 0, headshots: 0, shots: 0, hits: 0, damageDealt: 0,
   bobPhase: 0, bobAmp: 0, speed: 0, sprinting: false
@@ -159,6 +160,9 @@ function spawnPlayer() {
   player.velY = 0;
   player.grounded = true;
   player.landDip = 0;
+  player.crouchToggle = false;
+  player.crouchBlend = 0;
+  player.crouched = false;
   player.hp = 100;
   player.shield = 50;
   player.alive = true;
@@ -239,10 +243,11 @@ function firePlayerShot() {
   player.shots++;
   audio.shot(w.sound, 0);
 
-  // Compute dynamic spread based on ADS, movement & airborne state
+  // Compute dynamic spread based on ADS, crouch, movement & airborne state
   const ads = mouseAds && !weapons.isReloading && !player.sprinting;
   let spread = ads ? w.adsSpread : w.hipSpread;
-  if (player.speed > 1) spread += w.moveSpread * (ads ? .35 : 1);
+  if (player.crouched) spread *= .58;
+  if (player.speed > 1) spread += w.moveSpread * (ads ? .35 : player.crouched ? .48 : 1);
   if (!player.grounded) spread += w.jumpSpread;
 
   const dir = new T.Vector3(0, 0, -1).applyQuaternion(camera.quaternion);
@@ -286,9 +291,10 @@ function firePlayerShot() {
     weapons.spawnTracer(muzzle, origin.clone().addScaledVector(dir, 95), w.tracerColor);
   }
 
-  // Authentic upward recoil kick
-  player.pitch = T.MathUtils.clamp(player.pitch + w.recoilPitch * (ads ? .65 : 1), -1.36, 1.36);
-  player.yaw += (Math.random() - .5) * w.recoilYaw * 2;
+  // Authentic upward recoil kick (reduced when crouching or ADS)
+  const recoilMult = (ads ? .65 : 1) * (player.crouched ? .72 : 1);
+  player.pitch = T.MathUtils.clamp(player.pitch + w.recoilPitch * recoilMult, -1.36, 1.36);
+  player.yaw += (Math.random() - .5) * w.recoilYaw * 2 * (player.crouched ? .72 : 1);
 
   if (weapons.currentAmmo === 0) {
     if (weapons.startReload()) audio.reload();
@@ -490,6 +496,11 @@ document.addEventListener('keydown', e => {
     }
     return;
   }
+  if (k === 'c' && !e.repeat) {
+    player.crouchToggle = !player.crouchToggle;
+    $('#touch-crouch')?.setAttribute('aria-pressed', String(player.crouchToggle));
+    return;
+  }
   if (k === 'r') { if (weapons.startReload()) audio.reload(); return; }
   if (k === '1' || k === '2' || k === '3') { weapons.selectWeapon(Number(k) - 1); syncWeaponSlots(); syncHudNumbers(); return; }
   if (k === 'm') { toggleMute(); return; }
@@ -638,6 +649,10 @@ if (matchMedia('(pointer: coarse)').matches) {
     player.jumpBuf = .14;
     if (player.grounded || player.coyote > 0) { player.velY = 7.3; player.grounded = false; player.coyote = 0; player.jumpBuf = 0; }
   };
+  $('#touch-crouch').onclick = () => {
+    player.crouchToggle = !player.crouchToggle;
+    $('#touch-crouch').setAttribute('aria-pressed', String(player.crouchToggle));
+  };
   $('#touch-reload').onclick = () => { if (weapons.startReload()) audio.reload(); };
 }
 
@@ -694,18 +709,29 @@ function tick(now) {
         $('#shield-fill').style.width = `${player.shield * 2}%`;
       }
 
+      // Crouch state (Ctrl hold or C toggle) with headroom clearance check
+      const wantCrouch = keys.has('control') || player.crouchToggle;
+      if (wantCrouch) {
+        player.crouched = true;
+      } else if (player.crouched && arena.hasHeadroom(player.x, player.y, player.z, .42, 1.78)) {
+        player.crouched = false;
+      }
+      const targetCrouch = player.crouched ? 1 : 0;
+      player.crouchBlend += (targetCrouch - player.crouchBlend) * Math.min(1, dt * 15);
+      const actorHeight = T.MathUtils.lerp(1.78, 1.16, player.crouchBlend);
+
       // Movement & Sprint
       let fwd = (keys.has('w') || keys.has('arrowup') ? 1 : 0) - (keys.has('s') || keys.has('arrowdown') ? 1 : 0) + touchDriveZ;
       let strafe = (keys.has('d') || keys.has('arrowright') ? 1 : 0) - (keys.has('a') || keys.has('arrowleft') ? 1 : 0) + touchDriveX;
       const mag = Math.hypot(fwd, strafe);
       if (mag > 1) { fwd /= mag; strafe /= mag; }
-      player.sprinting = Boolean(keys.has('shift') && fwd > .2 && !mouseAds && !weapons.isReloading);
-      const baseSpeed = player.sprinting ? 10.2 : mouseAds ? 4.4 : 7.0;
+      player.sprinting = Boolean(!player.crouched && keys.has('shift') && fwd > .2 && !mouseAds && !weapons.isReloading);
+      const baseSpeed = player.crouched ? 4.2 : player.sprinting ? 10.2 : mouseAds ? 4.4 : 7.0;
       const prevX = player.x, prevZ = player.z;
       if (mag > .02) {
         const dx = (Math.sin(player.yaw) * fwd + Math.cos(player.yaw) * strafe) * baseSpeed * dt;
         const dz = (-Math.cos(player.yaw) * fwd + Math.sin(player.yaw) * strafe) * baseSpeed * dt;
-        const res = arena.resolveHorizontal(player.x + dx, player.y, player.z + dz, .42, 1.78);
+        const res = arena.resolveHorizontal(player.x + dx, player.y, player.z + dz, .42, actorHeight);
         player.x = res.x;
         player.z = res.z;
       }
@@ -761,10 +787,11 @@ function tick(now) {
         }
       }
 
-      const bobY = !reduced ? Math.sin(player.bobPhase) * (player.sprinting ? .058 : .035) * player.bobAmp * (mouseAds ? .25 : 1) : 0;
-      const bobX = !reduced ? Math.cos(player.bobPhase * .5) * (player.sprinting ? .028 : .015) * player.bobAmp * (mouseAds ? .2 : 1) : 0;
+      const bobY = !reduced ? Math.sin(player.bobPhase) * (player.sprinting ? .058 : player.crouched ? .018 : .035) * player.bobAmp * (mouseAds ? .25 : 1) : 0;
+      const bobX = !reduced ? Math.cos(player.bobPhase * .5) * (player.sprinting ? .028 : player.crouched ? .008 : .015) * player.bobAmp * (mouseAds ? .2 : 1) : 0;
       const rightX = Math.cos(player.yaw), rightZ = Math.sin(player.yaw);
-      camera.position.set(player.x + rightX * bobX, player.y + 1.62 + player.landDip + bobY, player.z + rightZ * bobX);
+      const eyeHeight = T.MathUtils.lerp(1.62, 1.02, player.crouchBlend);
+      camera.position.set(player.x + rightX * bobX, player.y + eyeHeight + player.landDip + bobY, player.z + rightZ * bobX);
       camera.rotation.set(player.pitch, -player.yaw, 0, 'YXZ');
 
       // Full-auto firing
@@ -786,7 +813,7 @@ function tick(now) {
       // Sniper scope vs dynamic crosshair
       $('#sniper-scope').hidden = !ws.scopedView;
       $('#crosshair').hidden = ws.scopedView;
-      const chSpread = 5 + Math.min(12, player.speed * 1.1) + (player.grounded ? 0 : 12) - ws.adsBlend * 3.5;
+      const chSpread = 5 + Math.min(12, player.speed * 1.1) + (player.grounded ? 0 : 12) - ws.adsBlend * 3.5 - player.crouchBlend * 2.2;
       $('#crosshair').style.setProperty('--spread', Math.max(2, chSpread).toFixed(1) + 'px');
 
       // Reload progress UI
@@ -794,6 +821,8 @@ function tick(now) {
       if (ws.reloading) $('#reload-fill').style.width = `${(ws.reloadProgress * 100).toFixed(1)}%`;
 
       stage.dataset.playerY = player.y.toFixed(2);
+      stage.dataset.eyeY = eyeHeight.toFixed(2);
+      stage.dataset.crouched = String(player.crouched);
       stage.dataset.scoped = String(ws.scopedView);
     }
 

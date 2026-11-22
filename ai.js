@@ -129,13 +129,32 @@ export function createBotManager(scene, arena, shadowTex, weapons, audio, callba
     for (const b of bots) scene.remove(b.model.root);
     bots.length = 0;
 
-    // Slight balance curve for allies so player remains the star across all 3 tiers
-    const allyProfile = {
-      ...diff,
-      reactionSec: Math.min(.48, diff.reactionSec * 1.18),
-      damage: Math.max(10, Math.round(diff.damage * .88)),
-      spreadDeg: diff.spreadDeg * 1.12
-    };
+    // Ally tactical tuning by difficulty: Normal-mode teammates are sharper and cover flanks reliably
+    const allyProfile = diff.id === 'normal'
+      ? {
+          ...diff,
+          reactionSec: .21,
+          damage: 18,
+          spreadDeg: 3.3,
+          headshotChance: .24,
+          strafeChance: .75,
+          highGroundBias: .65,
+          moveSpeed: 6.7
+        }
+      : diff.id === 'hard'
+      ? {
+          ...diff,
+          reactionSec: .16,
+          damage: 19,
+          spreadDeg: 2.3,
+          headshotChance: .30
+        }
+      : {
+          ...diff,
+          reactionSec: .45,
+          damage: 12,
+          spreadDeg: 7.8
+        };
 
     const lanes = ['west', 'mid', 'east', 'mid'];
     BLUE_NAMES.forEach((name, i) => {
@@ -229,7 +248,8 @@ export function createBotManager(scene, arena, shadowTex, weapons, audio, callba
       let target = null, targetDist = p.sightRange;
       const candidates = [];
       if (bot.team === 'red' && player.alive) {
-        candidates.push({ isPlayer: true, id: 'player', name: '你', x: player.x, y: player.y, z: player.z, eyeY: player.y + 1.55 });
+        const pEyeOffset = player.crouched ? 1.02 : 1.55;
+        candidates.push({ isPlayer: true, id: 'player', name: '你', x: player.x, y: player.y, z: player.z, eyeY: player.y + pEyeOffset });
       }
       for (const other of bots) {
         if (other.alive && other.team !== bot.team) {
@@ -391,7 +411,8 @@ export function createBotManager(scene, arena, shadowTex, weapons, audio, callba
           // Check player hit (if red bot)
           let landed = false;
           if (bot.team === 'red' && player.alive && player.spawnShield <= 0) {
-            const pHit = bot.model.hitTest(origin, dir, player.x, player.y, player.z, maxD);
+            const crouchDrop = player.crouched ? .48 : 0;
+            const pHit = bot.model.hitTest(origin, dir, player.x, player.y - crouchDrop, player.z, maxD);
             if (pHit) {
               landed = true;
               hitPoint = pHit.point;

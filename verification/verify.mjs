@@ -136,6 +136,18 @@ try {
   await until(() => ev("Number(document.querySelector('#stage').dataset.playerY)===0"), 'Player lands after jump', 30000);
   check('Player jumps cleanly with gravity and lands on cathedral flagstones', airY > 0.25);
 
+  // Crouch (C toggle) lowers eye height & tightens reticle, then stands back up
+  const standEye = await ev("Number(document.querySelector('#stage').dataset.eyeY)");
+  await ev("document.dispatchEvent(new KeyboardEvent('keydown',{key:'c',code:'KeyC'}))");
+  await waitFrames(8);
+  const crouched = await ev("document.querySelector('#stage').dataset.crouched==='true'");
+  const crouchEye = await ev("Number(document.querySelector('#stage').dataset.eyeY)");
+  await snap('crouch');
+  await ev("document.dispatchEvent(new KeyboardEvent('keydown',{key:'c',code:'KeyC'}))");
+  await waitFrames(8);
+  const stood = await ev("document.querySelector('#stage').dataset.crouched==='false' && Number(document.querySelector('#stage').dataset.eyeY) > 1.5");
+  check('Crouch lowers camera eye height cleanly and stands back up', crouched && standEye > 1.55 && crouchEye < 1.15 && stood);
+
   // Shoot and reload
   await ev("document.querySelector('#stage').dispatchEvent(new MouseEvent('mousedown',{button:0,clientX:720,clientY:450}))");
   await waitFrames(3);

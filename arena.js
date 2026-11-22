@@ -468,6 +468,18 @@ export function createGothicArena(scene, mats) {
     return { x: nx, z: nz };
   }
 
+  function hasHeadroom(x, y, z, radius = .42, height = 1.78) {
+    const feetClear = y + .65;
+    const headTop = y + height;
+    for (const b of colliders) {
+      if (b.maxY <= feetClear || b.minY >= headTop) continue;
+      const cx = T.MathUtils.clamp(x, b.minX, b.maxX);
+      const cz = T.MathUtils.clamp(z, b.minZ, b.maxZ);
+      if ((x - cx) ** 2 + (z - cz) ** 2 < radius * radius) return false;
+    }
+    return true;
+  }
+
   // Exact analytical slab raycast against ground (y=0) + all AABBs (sub-0.02ms!)
   function raycastWorld(origin, dir, maxDist = 120) {
     let bestT = maxDist;
@@ -603,6 +615,6 @@ export function createGothicArena(scene, mats) {
   return {
     group, colliders, ramps, radarShapes, waypoints, navAdj,
     blueSpawns, redSpawns,
-    supportHeight, resolveHorizontal, raycastWorld, hasLineOfSight, updateAtmosphere
+    supportHeight, resolveHorizontal, hasHeadroom, raycastWorld, hasLineOfSight, updateAtmosphere
   };
 }

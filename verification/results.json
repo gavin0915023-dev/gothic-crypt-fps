@@ -3,6 +3,7 @@
     "Gothic cathedral WebGL arena loads with lobby and 3 difficulty tiers",
     "Bot matchmaking enters 4v4 arena with HUD, radar and M4-圣堂 rifle",
     "Player jumps cleanly with gravity and lands on cathedral flagstones",
+    "Crouch lowers camera eye height cleanly and stands back up",
     "Firing consumes ammo and R triggers animated reload",
     "Weapon slots switch to SMG and Sniper with optical ADS scope",
     "Pause menu switches bot difficulty cleanly between Hard and Easy",

@@ -400,8 +400,11 @@ button { cursor: pointer; }
     display: grid; grid-template-columns: repeat(2, 62px); gap: 8px;
   }
   .touch-btns button {
-    height: 48px; border-radius: 10px; border: 1px solid rgba(255, 255, 255, 0.25);
+    height: 44px; border-radius: 10px; border: 1px solid rgba(255, 255, 255, 0.25);
     background: rgba(15, 22, 34, 0.72); font-size: 12px; font-weight: 600;
   }
-  .touch-btns .t-fire { background: rgba(214, 72, 60, 0.82); border-color: rgba(255, 136, 124, 0.6); }
+  .touch-btns button[aria-pressed="true"] {
+    background: rgba(214, 177, 104, 0.34); border-color: rgba(214, 177, 104, 0.8); color: #f6e7c3;
+  }
+  .touch-btns .t-fire { background: rgba(214, 72, 60, 0.82); border-color: rgba(255, 136, 124, 0.6); grid-column: span 2; }
 }
