@@ -2,7 +2,10 @@
 <html lang="zh-CN">
 <head>
   <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+  <meta name="mobile-web-app-capable" content="yes">
   <meta name="theme-color" content="#0d1522">
   <title>暮影圣堂 · Gothic Crypt FPS</title>
   <link rel="stylesheet" href="./style.css">
@@ -44,6 +47,20 @@
 
       <div id="killfeed" class="killfeed" aria-live="polite"></div>
 
+      <!-- Mobile top-right utility toolbar (Scoreboard, Fullscreen/Flip, Pause) -->
+      <div id="mobile-hud-tools" class="mobile-hud-tools mobile-only" aria-label="移动端快捷菜单">
+        <button type="button" id="btn-mobile-board" class="hud-icon-btn" aria-label="实时战绩" title="实时战绩">
+          <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 6h16M4 12h16M4 18h10" fill="none" stroke="currentColor" stroke-width="2.1" stroke-linecap="round"/></svg>
+        </button>
+        <button type="button" id="btn-mobile-orient" class="hud-icon-btn" aria-label="全屏与横屏方向" title="全屏/翻转横屏">
+          <svg class="icon-fs" viewBox="0 0 24 24" aria-hidden="true"><path d="M4 9V4h5M20 9V4h-5M4 15v5h5M20 15v5h-5" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>
+          <svg class="icon-flip" viewBox="0 0 24 24" aria-hidden="true"><path d="M21 12a9 9 0 1 1-2.64-6.36L21 8.2M21 3.5v4.7h-4.7" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>
+        </button>
+        <button type="button" id="btn-mobile-pause" class="hud-icon-btn" aria-label="暂停与设置" title="暂停">
+          <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M8 5v14M16 5v14" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"/></svg>
+        </button>
+      </div>
+
       <div id="lock-hint" class="lock-hint" hidden>点击画面锁定 FPS 鼠标准星 · 按 <kbd>Esc</kbd> 暂停 / 切换难度</div>
       <div id="respawn-banner" class="respawn-banner" hidden>
         <strong>已被击倒</strong>
@@ -68,7 +85,7 @@
 
       <section class="weapon-box" aria-label="武器与弹药">
         <div class="weapon-head">
-          <div>
+          <div class="weapon-meta">
             <strong id="weapon-name">M4-圣堂</strong>
             <small id="weapon-sub">突击步枪</small>
           </div>
@@ -94,24 +111,89 @@
         <span><kbd>M</kbd> 静音</span>
       </div>
 
-      <!-- Mobile touch action bar (hidden on desktop) -->
+      <!-- Mobile landscape FPS touch controls (CODM / Peacekeeper Elite style) -->
       <div class="touch-controls" id="touch-controls" hidden>
-        <div class="touch-pad" id="touch-move"><span class="touch-knob"></span></div>
-        <div class="touch-btns">
-          <button type="button" id="touch-fire" class="t-fire">开火</button>
-          <button type="button" id="touch-ads">开镜</button>
-          <button type="button" id="touch-jump">跳跃</button>
-          <button type="button" id="touch-crouch" aria-pressed="false">下蹲</button>
-          <button type="button" id="touch-reload">换弹</button>
+        <!-- Left half: dynamic floating joystick zone + sprint lock -->
+        <div class="touch-move-zone" id="touch-move-zone" aria-label="左侧移动摇杆区">
+          <div class="touch-pad" id="touch-move">
+            <div class="touch-sprint-lock" id="touch-sprint-lock" aria-hidden="true">
+              <svg viewBox="0 0 24 24"><path d="M12 19V5M6 11l6-6 6 6" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"/></svg>
+              <span>疾跑</span>
+            </div>
+            <span class="touch-ring-inner"></span>
+            <span class="touch-knob"></span>
+          </div>
+        </div>
+
+        <!-- Right half: dedicated camera aim/look zone -->
+        <div class="touch-aim-zone" id="touch-aim-zone" aria-label="右侧滑屏瞄准区"></div>
+
+        <!-- Secondary left fire button (classic 2/3-finger mobile FPS layout) -->
+        <button type="button" id="touch-fire-left" class="t-btn t-fire-left" aria-label="左侧固定开火">
+          <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 17L15 8l3-3 1 1-3 3-9 9H5v-2zM14 5l2 2M17 8l2 2M4 11h3M11 4v3" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"/></svg>
+          <span>开火</span>
+        </button>
+
+        <!-- Right-thumb ergonomic action arc -->
+        <div class="touch-action-cluster">
+          <button type="button" id="touch-fire" class="t-btn t-fire" aria-label="开火（按住拖动可跟枪压枪）">
+            <svg viewBox="0 0 24 24" aria-hidden="true">
+              <path d="M5 18.5L14.5 9c1.2-1.2 3-1.8 4.5-1.5.3 1.5-.3 3.3-1.5 4.5L8 21.5 4.5 22l.5-3.5z" fill="currentColor" opacity="0.92"/>
+              <path d="M4 11.5L7.5 11.5M11.5 4L11.5 7.5M6.2 6.2L8.8 8.8" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>
+            </svg>
+            <span>开火</span>
+          </button>
+
+          <button type="button" id="touch-ads" class="t-btn t-ads" aria-pressed="false" aria-label="开镜瞄准">
+            <svg viewBox="0 0 24 24" aria-hidden="true">
+              <circle cx="12" cy="12" r="6.5" fill="none" stroke="currentColor" stroke-width="1.9"/>
+              <path d="M12 2.5v3.5M12 18v3.5M2.5 12H6M18 12h3.5" stroke="currentColor" stroke-width="1.9" stroke-linecap="round"/>
+              <circle cx="12" cy="12" r="1.6" fill="currentColor"/>
+            </svg>
+            <span>开镜</span>
+          </button>
+
+          <button type="button" id="touch-jump" class="t-btn t-jump" aria-label="跳跃">
+            <svg viewBox="0 0 24 24" aria-hidden="true">
+              <path d="M12 18V6M6.5 11.5L12 6l5.5 5.5" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"/>
+              <path d="M7 20h10" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" opacity="0.65"/>
+            </svg>
+            <span>跳</span>
+          </button>
+
+          <button type="button" id="touch-crouch" class="t-btn t-crouch" aria-pressed="false" aria-label="下蹲">
+            <svg viewBox="0 0 24 24" aria-hidden="true">
+              <path d="M6.5 9.5L12 15l5.5-5.5M6.5 14.5L12 20l5.5-5.5" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"/>
+            </svg>
+            <span>蹲</span>
+          </button>
+
+          <button type="button" id="touch-reload" class="t-btn t-reload" aria-label="换弹">
+            <svg viewBox="0 0 24 24" aria-hidden="true">
+              <path d="M20 12a8 8 0 1 1-2.35-5.65L20 8.7" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+              <path d="M20 4v4.7h-4.7" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+            </svg>
+            <span>换弹</span>
+          </button>
         </div>
       </div>
     </div>
 
-    <!-- Hold-Tab Live Scoreboard -->
+    <!-- Auto-landscape gentle orientation toast (shown only in portrait software-landscape) -->
+    <div id="orient-toast" class="orient-toast" hidden>
+      <span>已自动切换横屏模式 · 横持手机手感更佳</span>
+      <button type="button" id="btn-toast-flip">↻ 翻转</button>
+      <button type="button" id="btn-toast-close" aria-label="关闭提示">✕</button>
+    </div>
+
+    <!-- Hold-Tab / Mobile Tap Live Scoreboard -->
     <section id="tab-board" class="overlay-card tab-board" hidden>
       <div class="tab-head">
         <h2>暮影圣堂 · 实时战绩</h2>
-        <span id="tab-diff-label">4v4 人机对战 · 普通难度</span>
+        <div class="tab-head-right">
+          <span id="tab-diff-label">4v4 人机对战 · 普通难度</span>
+          <button type="button" id="btn-close-board" class="btn-icon-close mobile-only" aria-label="关闭战绩">✕</button>
+        </div>
       </div>
       <div class="tab-cols">
         <div>
@@ -167,6 +249,7 @@
         <div class="lobby-actions">
           <button type="button" id="start-match" class="btn-primary">开始人机匹配</button>
           <button type="button" id="toggle-mute-lobby" class="btn-ghost" aria-pressed="false">音效：开启</button>
+          <button type="button" id="btn-lobby-orient" class="btn-ghost mobile-only">全屏横屏</button>
         </div>
 
         <div class="lobby-controls-note">
@@ -179,6 +262,12 @@
           <span><kbd>R</kbd> 换弹</span>
           <span><kbd>1</kbd><kbd>2</kbd><kbd>3</kbd> 切枪</span>
         </div>
+        <div class="lobby-touch-note mobile-only">
+          <span>左半屏浮动摇杆(上推疾跑/锁定奔跑)</span>
+          <span>右半屏滑屏瞄准</span>
+          <span>按住主开火可拖动压枪</span>
+          <span>左上雷达 · 顶部战绩/暂停</span>
+        </div>
       </div>
     </section>
 
@@ -187,16 +276,29 @@
       <div class="modal-card">
         <div class="lobby-eyebrow">TACTICAL PAUSE</div>
         <h2 id="pause-title">对局已暂停</h2>
-        <div class="setting-row">
-          <label for="sens-slider">鼠标灵敏度 <strong id="sens-val">1.0</strong></label>
-          <input id="sens-slider" type="range" min="0.4" max="2.4" step="0.1" value="1.0">
-        </div>
-        <div class="setting-row">
-          <span>切换难度重开</span>
-          <div class="pause-diffs">
-            <button type="button" data-restart-diff="easy">简单</button>
-            <button type="button" data-restart-diff="normal">普通</button>
-            <button type="button" data-restart-diff="hard">困难</button>
+        <div class="pause-grid">
+          <div class="setting-row">
+            <label for="sens-slider"><span id="sens-label">鼠标灵敏度</span> <strong id="sens-val">1.0</strong></label>
+            <div class="sens-control">
+              <button type="button" id="sens-dec" class="btn-step mobile-only" aria-label="降低灵敏度">−</button>
+              <input id="sens-slider" type="range" min="0.4" max="2.4" step="0.1" value="1.0">
+              <button type="button" id="sens-inc" class="btn-step mobile-only" aria-label="提高灵敏度">+</button>
+            </div>
+          </div>
+          <div class="setting-row">
+            <span>切换难度重开</span>
+            <div class="pause-diffs">
+              <button type="button" data-restart-diff="easy">简单</button>
+              <button type="button" data-restart-diff="normal">普通</button>
+              <button type="button" data-restart-diff="hard">困难</button>
+            </div>
+          </div>
+          <div class="setting-row mobile-only pause-mobile-opts">
+            <span>触控偏好</span>
+            <div class="pause-toggles">
+              <button type="button" id="btn-toggle-left-fire" class="active" aria-pressed="true">左侧开火：开</button>
+              <button type="button" id="btn-pause-orient">全屏横屏</button>
+            </div>
           </div>
         </div>
         <div class="modal-actions">

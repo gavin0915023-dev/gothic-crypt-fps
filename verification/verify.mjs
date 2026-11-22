@@ -190,10 +190,155 @@ try {
   await ev("window.dispatchEvent(new KeyboardEvent('keyup',{key:'Tab',code:'Tab'}))");
   check('4v4 scoreboard displays 4 Blue Wardens and 4 Red Phantoms', tabOk);
 
-  // Mobile responsive check
-  await call('Emulation.setDeviceMetricsOverride', { width: 390, height: 844, deviceScaleFactor: 1, mobile: true });
+  // Mobile Landscape FPS UI & Touch Controls Verification (844x390, iPhone 14 landscape)
+  await call('Emulation.setDeviceMetricsOverride', { width: 844, height: 390, deviceScaleFactor: 2, mobile: true });
+  await call('Emulation.setTouchEmulationEnabled', { enabled: true, maxTouchPoints: 5 });
+  await call('Page.navigate', { url });
+  await until(() => ev("document.querySelector('#stage')?.dataset.ready==='true'"), 'Mobile arena ready');
+  await waitFrames(4);
+
+  check('Mobile landscape lobby fits in single 390px viewport with 3-col cards and visible start CTA', await ev(`(()=>{
+    const b = document.body.classList.contains('mobile-mode');
+    const rot = document.querySelector('#stage').dataset.rotMode === '0';
+    const start = document.querySelector('#start-match').getBoundingClientRect();
+    const cards = [...document.querySelectorAll('.diff-card')].map(el => el.getBoundingClientRect());
+    const sameRow = Math.abs(cards[0].top - cards[1].top) < 4 && Math.abs(cards[1].top - cards[2].top) < 4;
+    const fits = start.bottom <= window.innerHeight && start.right <= window.innerWidth;
+    const noOverflow = document.documentElement.scrollWidth <= window.innerWidth;
+    return b && rot && sameRow && fits && noOverflow;
+  })()`));
+  await snap('mobile-lobby');
+
+  // Enter match on mobile landscape
+  await ev("document.querySelector('#start-match').click()");
+  await until(() => ev("document.querySelector('#stage').dataset.state==='playing'"), 'Mobile matchmaking enters arena');
+  await waitFrames(5);
+
+  const layoutAudit = await ev(`(()=>{
+    const ids = ['#radar', '.scoreboard-bar', '#mobile-hud-tools', '.vitality-box', '.weapon-box', '#touch-move', '#touch-fire-left', '#touch-fire', '#touch-ads', '#touch-jump', '#touch-crouch', '#touch-reload'];
+    const rects = {};
+    for (const sel of ids) {
+      const r = document.querySelector(sel).getBoundingClientRect();
+      rects[sel] = { l: r.left, t: r.top, r: r.right, b: r.bottom, w: r.width, h: r.height };
+    }
+    const overlap = (a, b) => !(a.r <= b.l + 1 || b.r <= a.l + 1 || a.b <= b.t + 1 || b.b <= a.t + 1);
+    const pairs = [
+      ['#radar', '#touch-fire-left'], ['#radar', '#touch-move'], ['#radar', '.scoreboard-bar'],
+      ['.scoreboard-bar', '#mobile-hud-tools'], ['#mobile-hud-tools', '#touch-ads'], ['#mobile-hud-tools', '#touch-reload'],
+      ['#touch-fire-left', '#touch-move'], ['#touch-move', '.weapon-box'], ['#touch-move', '.vitality-box'],
+      ['.weapon-box', '.vitality-box'], ['.weapon-box', '#touch-fire'], ['.vitality-box', '#touch-fire'],
+      ['#touch-fire', '#touch-ads'], ['#touch-fire', '#touch-jump'], ['#touch-fire', '#touch-crouch'], ['#touch-fire', '#touch-reload'],
+      ['#touch-ads', '#touch-jump'], ['#touch-jump', '#touch-crouch'], ['#touch-ads', '#touch-reload']
+    ];
+    const collisions = pairs.filter(([a, b]) => overlap(rects[a], rects[b])).map(([a, b]) => a + ' x ' + b);
+    const outOfBounds = Object.entries(rects).filter(([, r]) => r.l < -1 || r.t < -1 || r.r > window.innerWidth + 1 || r.b > window.innerHeight + 1 || r.w <= 0 || r.h <= 0).map(([k]) => k);
+    return { collisions, outOfBounds, touchVisible: !document.querySelector('#touch-controls').hidden };
+  })()`);
+  check(`Mobile landscape HUD (844x390) has zero overlapping or clipped controls (${JSON.stringify(layoutAudit)})`, layoutAudit.touchVisible && layoutAudit.collisions.length === 0 && layoutAudit.outOfBounds.length === 0);
+  await snap('mobile-hud');
+
+  // Test Floating Virtual Joystick + Auto-Sprint
+  await ev(`(()=>{
+    const z = document.querySelector('#touch-move-zone');
+    z.dispatchEvent(new PointerEvent('pointerdown', { pointerId: 11, clientX: 110, clientY: 300, bubbles: true }));
+    z.dispatchEvent(new PointerEvent('pointermove', { pointerId: 11, clientX: 110, clientY: 220, bubbles: true }));
+  })()`);
+  await waitFrames(8);
+  const mobileSprintOk = await ev("document.querySelector('#stage').dataset.sprinting === 'true'");
+  await ev("document.querySelector('#touch-move-zone').dispatchEvent(new PointerEvent('pointerup', { pointerId: 11, clientX: 110, clientY: 220, bubbles: true }))");
+  check('Mobile floating joystick moves forward and engages auto-sprint', mobileSprintOk);
+
+  // Test Right Aim Zone + Primary Fire Drag-to-Aim + Left Secondary Fire
+  const yawBefore = await ev("Number(document.querySelector('#stage').dataset.yaw)");
+  await ev(`(()=>{
+    const aim = document.querySelector('#touch-aim-zone');
+    aim.dispatchEvent(new PointerEvent('pointerdown', { pointerId: 12, clientX: 560, clientY: 180, bubbles: true }));
+    aim.dispatchEvent(new PointerEvent('pointermove', { pointerId: 12, clientX: 640, clientY: 175, bubbles: true }));
+    aim.dispatchEvent(new PointerEvent('pointerup', { pointerId: 12, clientX: 640, clientY: 175, bubbles: true }));
+  })()`);
+  await waitFrames(2);
+  const yawAfterAim = await ev("Number(document.querySelector('#stage').dataset.yaw)");
+  const ammoBeforeMobile = await ev("Number(document.querySelector('#stage').dataset.ammo)");
+  await ev(`(()=>{
+    const f = document.querySelector('#touch-fire');
+    const r = f.getBoundingClientRect();
+    const cx = r.left + r.width / 2, cy = r.top + r.height / 2;
+    f.dispatchEvent(new PointerEvent('pointerdown', { pointerId: 13, clientX: cx, clientY: cy, bubbles: true }));
+    f.dispatchEvent(new PointerEvent('pointermove', { pointerId: 13, clientX: cx + 45, clientY: cy + 8, bubbles: true }));
+  })()`);
+  await waitFrames(4);
+  await ev("document.querySelector('#touch-fire').dispatchEvent(new PointerEvent('pointerup', { pointerId: 13, bubbles: true }))");
+  const yawAfterFireDrag = await ev("Number(document.querySelector('#stage').dataset.yaw)");
+  const ammoAfterRightFire = await ev("Number(document.querySelector('#stage').dataset.ammo)");
+  await ev("document.querySelector('#touch-fire-left').dispatchEvent(new PointerEvent('pointerdown', { pointerId: 14, bubbles: true }))");
+  await waitFrames(4);
+  await ev("document.querySelector('#touch-fire-left').dispatchEvent(new PointerEvent('pointerup', { pointerId: 14, bubbles: true }))");
+  const ammoAfterLeftFire = await ev("Number(document.querySelector('#stage').dataset.ammo)");
+  check('Mobile aim drag, right fire-while-dragging, and left secondary fire all work cleanly',
+    yawAfterAim > yawBefore + 0.1 && yawAfterFireDrag > yawAfterAim + 0.05 && ammoAfterRightFire < ammoBeforeMobile && ammoAfterLeftFire < ammoAfterRightFire);
+
+  // Test Mobile Sniper Switch + ADS Scope + Crouch + Reload
+  await ev("document.querySelector('[data-slot=\"2\"]').click()");
+  await ev("document.querySelector('#touch-ads').dispatchEvent(new PointerEvent('pointerdown', { pointerId: 15, bubbles: true }))");
+  await ev("document.querySelector('#touch-ads').dispatchEvent(new PointerEvent('pointerup', { pointerId: 15, bubbles: true }))");
+  await waitFrames(6);
+  const mobileScoped = await ev("document.querySelector('#stage').dataset.scoped === 'true' && document.querySelector('#touch-ads').getAttribute('aria-pressed') === 'true'");
+  await snap('mobile-scope');
+  await ev("document.querySelector('#touch-ads').dispatchEvent(new PointerEvent('pointerdown', { pointerId: 16, bubbles: true }))");
+  await ev("document.querySelector('#touch-ads').dispatchEvent(new PointerEvent('pointerup', { pointerId: 16, bubbles: true }))");
+  await ev("document.querySelector('#touch-crouch').dispatchEvent(new PointerEvent('pointerdown', { pointerId: 17, bubbles: true }))");
+  await waitFrames(5);
+  const mobileCrouchOk = await ev("document.querySelector('#stage').dataset.crouched === 'true'");
+  await ev("document.querySelector('#touch-crouch').dispatchEvent(new PointerEvent('pointerdown', { pointerId: 18, bubbles: true }))");
+  check('Mobile weapon dock switch, sniper ADS toggle, and crouch button work cleanly', mobileScoped && mobileCrouchOk);
+
+  // Test Mobile Live Scoreboard & Pause Menu (with sensitivity steppers & left-fire toggle)
+  await ev("document.querySelector('#btn-mobile-board').click()");
+  await waitFrames(2);
+  const mobileBoardOk = await ev("!document.querySelector('#tab-board').hidden && document.querySelector('#tab-board').getBoundingClientRect().bottom <= window.innerHeight");
+  await ev("document.querySelector('#btn-close-board').click()");
+  await ev("document.querySelector('#btn-mobile-pause').click()");
+  await waitFrames(2);
+  await ev("document.querySelector('#sens-inc').click()");
+  await ev("document.querySelector('#btn-toggle-left-fire').click()");
+  const mobilePauseOk = await ev(`(()=>{
+    const pm = document.querySelector('#pause-menu');
+    const card = pm.querySelector('.modal-card').getBoundingClientRect();
+    return !pm.hidden && card.bottom <= window.innerHeight && document.querySelector('#sens-val').textContent === '1.1' && document.body.classList.contains('hide-left-fire');
+  })()`);
+  await snap('mobile-pause');
+  await ev("document.querySelector('#btn-toggle-left-fire').click()");
+  await ev("document.querySelector('#btn-resume').click()");
+  check('Mobile scoreboard and pause menu fit cleanly in landscape with working settings', mobileBoardOk && mobilePauseOk);
+
+  // Compact landscape phone check (667x375 iPhone SE)
+  await call('Emulation.setDeviceMetricsOverride', { width: 667, height: 375, deviceScaleFactor: 2, mobile: true });
   await waitFrames(3);
-  check('Mobile viewport fits with zero horizontal overflow', await ev('document.documentElement.scrollWidth<=window.innerWidth'));
+  const compactAudit = await ev(`(()=>{
+    const ids = ['#radar', '.scoreboard-bar', '#mobile-hud-tools', '.vitality-box', '.weapon-box', '#touch-move', '#touch-fire-left', '#touch-fire', '#touch-ads', '#touch-jump', '#touch-crouch', '#touch-reload'];
+    const rects = Object.fromEntries(ids.map(s => [s, document.querySelector(s).getBoundingClientRect()]));
+    const overlap = (a, b) => !(a.right <= b.left + 1 || b.right <= a.left + 1 || a.bottom <= b.top + 1 || b.bottom <= a.top + 1);
+    const pairs = [['#radar', '#touch-fire-left'], ['#touch-move', '.weapon-box'], ['.weapon-box', '#touch-fire'], ['#touch-fire', '#touch-ads'], ['#touch-fire', '#touch-jump'], ['#touch-fire', '#touch-crouch'], ['#touch-fire', '#touch-reload']];
+    return pairs.filter(([a, b]) => overlap(rects[a], rects[b])).length;
+  })()`);
+  check('Compact landscape viewport (667x375) fits with zero HUD collisions', compactAudit === 0);
+
+  // Mobile Portrait Auto-Landscape Check (390x844)
+  await call('Emulation.setDeviceMetricsOverride', { width: 390, height: 844, deviceScaleFactor: 2, mobile: true });
+  await waitFrames(4);
+  const portraitAuto = await ev(`(()=>{
+    const shell = document.querySelector('.game-shell');
+    const canvas = document.querySelector('#stage canvas');
+    const rot90 = shell.classList.contains('force-landscape') && document.querySelector('#stage').dataset.rotMode === '90';
+    const landscapeCanvas = canvas.width > canvas.height;
+    const noOverflow = document.documentElement.scrollWidth <= window.innerWidth;
+    return rot90 && landscapeCanvas && noOverflow;
+  })()`);
+  await snap('mobile-portrait-autolandscape');
+  await ev("document.querySelector('#btn-toast-flip').click()");
+  await waitFrames(2);
+  const portraitFlip = await ev("document.querySelector('#stage').dataset.rotMode === '-90' && document.querySelector('.game-shell').classList.contains('rot-ccw')");
+  check('Mobile portrait auto-switches to software landscape with 180° flip and zero overflow', portraitAuto && portraitFlip);
 
   check('Zero uncaught exceptions and zero WebGL shader errors', failures.length === 0 && shaderErrors.length === 0);
   await writeFile(join(output, 'results.json'), JSON.stringify({ checks, failures, shaderErrors }, null, 2) + '\n');

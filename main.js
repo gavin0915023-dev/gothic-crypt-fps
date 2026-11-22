@@ -7,6 +7,7 @@ import { createAudio } from './audio.js';
 import { createBotManager, DIFFICULTIES } from './ai.js';
 
 const $ = s => document.querySelector(s);
+const shell = $('.game-shell');
 const stage = $('#stage');
 const TARGET_SCORE = 20;
 const MATCH_SECONDS = 270; // 4:30
@@ -75,7 +76,16 @@ const player = {
 
 const keys = new Set();
 let mouseFire = false, mouseAds = false, dragLook = null;
-let touchDriveX = 0, touchDriveZ = 0;
+let touchDriveX = 0, touchDriveZ = 0, touchSprint = false, touchSprintLock = false;
+let rightFireActive = false, leftFireActive = false;
+const isTouchFiring = () => rightFireActive || leftFireActive;
+let mobileMode = false, rotMode = 0, shellW = 1440, shellH = 900;
+let preferredRotDir = 90, showLeftFire = true, toastDismissed = false, toastTimer = null;
+try {
+  const savedRot = Number(localStorage.getItem('gothic_fps_rot'));
+  if (savedRot === 90 || savedRot === -90) preferredRotDir = savedRot;
+  if (localStorage.getItem('gothic_fps_left_fire') === '0') showLeftFire = false;
+} catch { /* ignore storage restrictions */ }
 
 function addKillfeed(attackerName, attackerTeam, victimName, victimTeam, weaponName, headshot) {
   const feed = $('#killfeed');
@@ -139,6 +149,8 @@ const botMgr = createBotManager(scene, arena, mats.shadowTex, weapons, audio, {
       player.respawnTimer = 3.0;
       attackerBot.kills++;
       scoreRed++;
+      setAds(false);
+      resetMobileInputs();
       addKillfeed(attackerBot.name, 'red', '你', 'blue', 'M4-圣堂', headshot);
       $('#respawn-banner').hidden = false;
       checkMatchEnd();
@@ -150,6 +162,29 @@ const botMgr = createBotManager(scene, arena, mats.shadowTex, weapons, audio, {
 // Pre-populate ambient bots behind lobby backdrop so the arena feels alive immediately!
 botMgr.initMatch(selectedDiff);
 
+function setAds(on) {
+  mouseAds = Boolean(on);
+  $('#touch-ads')?.setAttribute('aria-pressed', String(mouseAds));
+}
+
+function setCrouch(on) {
+  player.crouchToggle = Boolean(on);
+  $('#touch-crouch')?.setAttribute('aria-pressed', String(player.crouchToggle));
+}
+
+function triggerJump() {
+  if (state !== 'playing' || !player.alive) return;
+  if (mobileMode && player.crouchToggle) setCrouch(false);
+  player.jumpBuf = .14;
+  if (player.grounded || player.coyote > 0) {
+    player.velY = 7.3;
+    player.grounded = false;
+    player.coyote = 0;
+    player.jumpBuf = 0;
+    audio.step(false);
+  }
+}
+
 function spawnPlayer() {
   const sp = arena.blueSpawns[0];
   player.x = sp.x;
@@ -160,7 +195,8 @@ function spawnPlayer() {
   player.velY = 0;
   player.grounded = true;
   player.landDip = 0;
-  player.crouchToggle = false;
+  setCrouch(false);
+  setAds(false);
   player.crouchBlend = 0;
   player.crouched = false;
   player.hp = 100;
@@ -182,6 +218,7 @@ function beginMatch(diffId) {
   $('#killfeed').replaceChildren();
   botMgr.initMatch(selectedDiff);
   weapons.selectWeapon(selectedLoadout);
+  resetMobileInputs();
   spawnPlayer();
 
   state = 'playing';
@@ -190,6 +227,7 @@ function beginMatch(diffId) {
   $('#lobby').hidden = true;
   $('#pause-menu').hidden = true;
   $('#end-screen').hidden = true;
+  $('#tab-board').hidden = true;
   $('#hud').hidden = false;
   $('#crosshair').hidden = false;
   $('#diff-pill').textContent = DIFFICULTIES[selectedDiff].label;
@@ -197,6 +235,7 @@ function beginMatch(diffId) {
   document.querySelectorAll('[data-restart-diff]').forEach(b => b.classList.toggle('active', b.dataset.restartDiff === selectedDiff));
   syncWeaponSlots();
   syncHudNumbers();
+  scheduleToastAutoHide();
   renderer.shadowMap.needsUpdate = true;
   stage.focus({ preventScroll: true });
   requestLockSafe();
@@ -206,7 +245,8 @@ function finishMatch() {
   state = 'ended';
   stage.dataset.state = state;
   mouseFire = false;
-  mouseAds = false;
+  setAds(false);
+  resetMobileInputs();
   if (document.pointerLockElement === stage) document.exitPointerLock?.();
   $('#crosshair').hidden = true;
   $('#sniper-scope').hidden = true;
@@ -227,7 +267,7 @@ function finishMatch() {
 }
 
 function requestLockSafe() {
-  if (matchMedia('(pointer: coarse)').matches) return;
+  if (mobileMode || matchMedia('(pointer: coarse)').matches) return;
   try {
     const p = stage.requestPointerLock?.();
     if (p && typeof p.catch === 'function') p.catch(() => {});
@@ -395,7 +435,7 @@ function renderTabBoard() {
 }
 
 // =========================================================================
-// 5. INPUTS: POINTER LOCK, KEYBOARD, MOUSE, LOBBY & TOUCH CONTROLS
+// 5. INPUTS: RESPONSIVE LANDSCAPE, POINTER LOCK, KEYBOARD, MOUSE & TOUCH
 // =========================================================================
 function resize() {
   const w = Math.max(1, stage.clientWidth), h = Math.max(1, stage.clientHeight);
@@ -403,21 +443,150 @@ function resize() {
   camera.updateProjectionMatrix();
   renderer.setSize(w, h, false);
 }
+
+const forceMobileParam = new URLSearchParams(location.search).get('mobile') === '1';
+function detectMobile() {
+  return forceMobileParam || matchMedia('(pointer: coarse)').matches;
+}
+
+function clientToShell(cx, cy) {
+  const vw = window.visualViewport?.width || window.innerWidth;
+  const vh = window.visualViewport?.height || window.innerHeight;
+  if (rotMode === 90) return { x: cy, y: vw - cx };
+  if (rotMode === -90) return { x: vh - cy, y: cx };
+  return { x: cx, y: cy };
+}
+
+function deltaToShell(dx, dy) {
+  if (rotMode === 90) return { dx: dy, dy: -dx };
+  if (rotMode === -90) return { dx: -dy, dy: dx };
+  return { dx, dy };
+}
+
+function scheduleToastAutoHide() {
+  clearTimeout(toastTimer);
+  const toast = $('#orient-toast');
+  if (!toast || toast.hidden) return;
+  if (state === 'playing') {
+    toastTimer = setTimeout(() => { toast.hidden = true; }, 4500);
+  }
+}
+
+function syncLeftFirePref() {
+  document.body.classList.toggle('hide-left-fire', !showLeftFire);
+  const btn = $('#btn-toggle-left-fire');
+  if (btn) {
+    btn.classList.toggle('active', showLeftFire);
+    btn.setAttribute('aria-pressed', String(showLeftFire));
+    btn.textContent = showLeftFire ? '左侧开火：开' : '左侧开火：关';
+  }
+}
+
+function updateViewportLayout() {
+  const vw = Math.max(1, Math.round(window.visualViewport?.width || window.innerWidth));
+  const vh = Math.max(1, Math.round(window.visualViewport?.height || window.innerHeight));
+  mobileMode = detectMobile();
+  document.body.classList.toggle('mobile-mode', mobileMode);
+  $('#touch-controls').hidden = !mobileMode;
+  $('#lock-hint').hidden = state !== 'playing' || document.pointerLockElement === stage || mobileMode;
+  const sensLbl = $('#sens-label');
+  if (sensLbl) sensLbl.textContent = mobileMode ? '触控视角灵敏度' : '鼠标灵敏度';
+
+  // Auto-landscape on mobile portrait (keeps true 16:9+ FPS ergonomics even when OS rotation is locked)
+  const wantForceLandscape = mobileMode && vh > vw;
+  rotMode = wantForceLandscape ? preferredRotDir : 0;
+  shell.classList.toggle('force-landscape', rotMode !== 0);
+  shell.classList.toggle('rot-ccw', rotMode === -90);
+  if (rotMode !== 0) {
+    shellW = vh;
+    shellH = vw;
+    shell.style.setProperty('--shell-w', `${vh}px`);
+    shell.style.setProperty('--shell-h', `${vw}px`);
+  } else {
+    shellW = vw;
+    shellH = vh;
+    shell.style.removeProperty('--shell-w');
+    shell.style.removeProperty('--shell-h');
+  }
+  shell.classList.toggle('compact-h', mobileMode && shellH <= 380);
+  renderer.setPixelRatio(Math.min(devicePixelRatio, mobileMode ? 1.5 : 1.75));
+  stage.dataset.mobile = String(mobileMode);
+  stage.dataset.rotMode = String(rotMode);
+
+  const isFs = Boolean(document.fullscreenElement);
+  const orientLabel = rotMode !== 0 ? '↻ 翻转横屏' : (isFs ? '退出全屏' : '全屏横屏');
+  const lobbyOrient = $('#btn-lobby-orient');
+  const pauseOrient = $('#btn-pause-orient');
+  if (lobbyOrient) lobbyOrient.textContent = orientLabel;
+  if (pauseOrient) pauseOrient.textContent = orientLabel;
+
+  const toast = $('#orient-toast');
+  if (toast) {
+    toast.hidden = !(rotMode !== 0 && !toastDismissed);
+    if (!toast.hidden) scheduleToastAutoHide();
+  }
+  resize();
+}
+
+function flipSoftwareLandscape() {
+  preferredRotDir = preferredRotDir === 90 ? -90 : 90;
+  try { localStorage.setItem('gothic_fps_rot', String(preferredRotDir)); } catch {}
+  updateViewportLayout();
+}
+
+function tryEnterLandscapeFullscreen() {
+  if (!mobileMode) return;
+  try {
+    const req = document.documentElement.requestFullscreen?.() ?? document.documentElement.webkitRequestFullscreen?.();
+    if (req && typeof req.then === 'function') {
+      req.then(() => {
+        const lock = screen.orientation?.lock?.('landscape');
+        if (lock && typeof lock.catch === 'function') lock.catch(() => {});
+      }).catch(() => {});
+    } else {
+      const lock = screen.orientation?.lock?.('landscape');
+      if (lock && typeof lock.catch === 'function') lock.catch(() => {});
+    }
+  } catch { /* Browser/iOS may not support Fullscreen or ScreenOrientation.lock */ }
+}
+
+function handleOrientButton() {
+  if (rotMode !== 0) {
+    flipSoftwareLandscape();
+    return;
+  }
+  if (document.fullscreenElement) {
+    document.exitFullscreen?.().catch?.(() => {});
+  } else {
+    tryEnterLandscapeFullscreen();
+  }
+}
+
 new ResizeObserver(resize).observe(stage);
-resize();
+window.addEventListener('resize', updateViewportLayout);
+window.addEventListener('orientationchange', () => setTimeout(updateViewportLayout, 60));
+window.visualViewport?.addEventListener('resize', updateViewportLayout);
+document.addEventListener('fullscreenchange', updateViewportLayout);
+matchMedia('(pointer: coarse)').addEventListener?.('change', updateViewportLayout);
+syncLeftFirePref();
+updateViewportLayout();
+
+// Prevent long-press system context menus on mobile HUD buttons (desktop keeps stage-only prevention)
+stage.addEventListener('contextmenu', e => e.preventDefault());
+shell.addEventListener('contextmenu', e => { if (mobileMode) e.preventDefault(); });
 
 document.addEventListener('pointerlockchange', () => {
   const locked = document.pointerLockElement === stage;
   stage.dataset.pointerLock = String(locked);
-  $('#lock-hint').hidden = state !== 'playing' || locked || matchMedia('(pointer: coarse)').matches;
-  if (!locked && state === 'playing') {
+  $('#lock-hint').hidden = state !== 'playing' || locked || mobileMode;
+  if (!locked && state === 'playing' && !mobileMode) {
     mouseFire = false;
-    mouseAds = false;
+    setAds(false);
   }
 });
 
 document.addEventListener('mousemove', e => {
-  if (state !== 'playing' || !player.alive) return;
+  if (mobileMode || state !== 'playing' || !player.alive) return;
   if (document.pointerLockElement === stage) {
     const scale = (weapons.current.scoped && mouseAds ? .00095 : .0021) * sensitivity;
     player.yaw += e.movementX * scale;
@@ -433,27 +602,27 @@ document.addEventListener('mousemove', e => {
 });
 
 stage.addEventListener('mousedown', e => {
-  if (state !== 'playing') return;
+  if (mobileMode || state !== 'playing') return;
   audio.unlock();
   stage.focus({ preventScroll: true });
   if (e.button === 0) {
-    if (document.pointerLockElement !== stage && !matchMedia('(pointer: coarse)').matches) {
+    if (document.pointerLockElement !== stage) {
       requestLockSafe();
       dragLook = { x: e.clientX, y: e.clientY };
     }
     mouseFire = true;
     firePlayerShot();
   } else if (e.button === 2) {
-    mouseAds = true;
+    setAds(true);
     if (document.pointerLockElement !== stage) dragLook = { x: e.clientX, y: e.clientY };
   }
 });
 window.addEventListener('mouseup', e => {
+  if (mobileMode) return;
   if (e.button === 0) mouseFire = false;
-  if (e.button === 2) mouseAds = false;
+  if (e.button === 2) setAds(false);
   dragLook = null;
 });
-stage.addEventListener('contextmenu', e => e.preventDefault());
 stage.addEventListener('wheel', e => {
   if (state !== 'playing') return;
   e.preventDefault();
@@ -462,19 +631,24 @@ stage.addEventListener('wheel', e => {
   syncHudNumbers();
 }, { passive: false });
 
+function pauseGame() {
+  if (state !== 'playing') return;
+  state = 'paused';
+  stage.dataset.state = state;
+  mouseFire = false;
+  setAds(false);
+  keys.clear();
+  resetMobileInputs({ keepCrouch: true });
+  if (document.pointerLockElement === stage) document.exitPointerLock?.();
+  $('#pause-menu').hidden = false;
+  $('#tab-board').hidden = true;
+}
+
 document.addEventListener('keydown', e => {
   const k = e.key.toLowerCase();
   if (k === 'escape') {
-    if (state === 'playing') {
-      state = 'paused';
-      stage.dataset.state = state;
-      mouseFire = false; mouseAds = false; keys.clear();
-      if (document.pointerLockElement === stage) document.exitPointerLock?.();
-      $('#pause-menu').hidden = false;
-      $('#tab-board').hidden = true;
-    } else if (state === 'paused') {
-      resumeGame();
-    }
+    if (state === 'playing') pauseGame();
+    else if (state === 'paused') resumeGame();
     return;
   }
   if (state !== 'playing') return;
@@ -486,19 +660,11 @@ document.addEventListener('keydown', e => {
   }
   if (e.code === 'Space' || k === ' ') {
     e.preventDefault();
-    player.jumpBuf = .14;
-    if (player.grounded || player.coyote > 0) {
-      player.velY = 7.3;
-      player.grounded = false;
-      player.coyote = 0;
-      player.jumpBuf = 0;
-      audio.step(false);
-    }
+    triggerJump();
     return;
   }
   if (k === 'c' && !e.repeat) {
-    player.crouchToggle = !player.crouchToggle;
-    $('#touch-crouch')?.setAttribute('aria-pressed', String(player.crouchToggle));
+    setCrouch(!player.crouchToggle);
     return;
   }
   if (k === 'r') { if (weapons.startReload()) audio.reload(); return; }
@@ -511,13 +677,18 @@ window.addEventListener('keyup', e => {
   keys.delete(k);
   if (k === 'tab') $('#tab-board').hidden = true;
 });
-window.addEventListener('blur', () => { keys.clear(); mouseFire = false; mouseAds = false; });
+window.addEventListener('blur', () => { keys.clear(); mouseFire = false; setAds(false); resetMobileInputs({ keepCrouch: true }); });
+document.addEventListener('visibilitychange', () => {
+  if (document.hidden) { keys.clear(); mouseFire = false; setAds(false); resetMobileInputs({ keepCrouch: true }); }
+});
 
 // Weapon slot HUD buttons
 document.querySelectorAll('[data-slot]').forEach(btn => {
   btn.onclick = () => {
     if (state !== 'playing') return;
-    weapons.selectWeapon(Number(btn.dataset.slot));
+    const idx = Number(btn.dataset.slot);
+    if (mobileMode && idx !== weapons.currentIndex) setAds(false);
+    weapons.selectWeapon(idx);
     syncWeaponSlots();
     syncHudNumbers();
   };
@@ -549,6 +720,7 @@ let matchTimer = null;
 $('#start-match').onclick = () => {
   if (state === 'matching') return;
   audio.unlock();
+  if (mobileMode && !document.fullscreenElement) tryEnterLandscapeFullscreen();
   state = 'matching';
   stage.dataset.state = state;
   const mmBox = $('#matchmaking-status'), mmText = $('#mm-text');
@@ -589,16 +761,25 @@ $('#btn-resume').onclick = resumeGame;
 $('#btn-lobby').onclick = () => {
   state = 'lobby';
   stage.dataset.state = state;
+  resetMobileInputs();
+  setAds(false);
   $('#pause-menu').hidden = true;
+  $('#tab-board').hidden = true;
   $('#hud').hidden = true;
   $('#crosshair').hidden = true;
   $('#sniper-scope').hidden = true;
   $('#lobby').hidden = false;
 };
-$('#sens-slider').oninput = e => {
-  sensitivity = Number(e.target.value);
+
+function setSensitivity(val) {
+  sensitivity = Math.round(T.MathUtils.clamp(val, 0.4, 2.4) * 10) / 10;
+  $('#sens-slider').value = sensitivity.toFixed(1);
   $('#sens-val').textContent = sensitivity.toFixed(1);
-};
+}
+$('#sens-slider').oninput = e => setSensitivity(Number(e.target.value));
+$('#sens-dec').onclick = () => setSensitivity(sensitivity - 0.1);
+$('#sens-inc').onclick = () => setSensitivity(sensitivity + 0.1);
+
 document.querySelectorAll('[data-restart-diff]').forEach(btn => {
   btn.onclick = () => beginMatch(btn.dataset.restartDiff);
 });
@@ -606,54 +787,336 @@ $('#btn-rematch').onclick = () => beginMatch(selectedDiff);
 $('#btn-end-lobby').onclick = () => {
   state = 'lobby';
   stage.dataset.state = state;
+  resetMobileInputs();
   $('#end-screen').hidden = true;
   $('#hud').hidden = true;
   $('#lobby').hidden = false;
 };
 
-// Mobile touch controls (virtual joystick + look drag + fire/ADS/jump/reload buttons)
-if (matchMedia('(pointer: coarse)').matches) {
-  $('#touch-controls').hidden = false;
-  const pad = $('#touch-move'), knob = pad.querySelector('.touch-knob');
-  let padId = null, lookId = null, lx = 0, ly = 0;
-  pad.addEventListener('pointerdown', e => { padId = e.pointerId; pad.setPointerCapture(e.pointerId); });
-  pad.addEventListener('pointermove', e => {
-    if (e.pointerId !== padId) return;
-    const r = pad.getBoundingClientRect(), rad = r.width / 2 - 12;
-    let dx = e.clientX - (r.left + r.width / 2), dy = e.clientY - (r.top + r.height / 2);
-    const l = Math.hypot(dx, dy);
-    if (l > rad) { dx *= rad / l; dy *= rad / l; }
-    knob.style.transform = `translate(${dx.toFixed(1)}px,${dy.toFixed(1)}px)`;
-    touchDriveX = dx / rad;
-    touchDriveZ = -dy / rad;
+// Mobile utility buttons (Pause, Live Scoreboard, Fullscreen / Flip, Left-Fire toggle)
+function toggleMobileBoard() {
+  if (state !== 'playing') return;
+  const board = $('#tab-board');
+  if (board.hidden) {
+    renderTabBoard();
+    board.hidden = false;
+  } else {
+    board.hidden = true;
+  }
+}
+$('#btn-mobile-pause').onclick = () => pauseGame();
+$('#btn-mobile-board').onclick = toggleMobileBoard;
+$('#btn-close-board').onclick = () => { $('#tab-board').hidden = true; };
+$('.scoreboard-bar').onclick = () => { if (mobileMode) toggleMobileBoard(); };
+$('#btn-mobile-orient').onclick = handleOrientButton;
+$('#btn-lobby-orient').onclick = handleOrientButton;
+$('#btn-pause-orient').onclick = handleOrientButton;
+$('#btn-toast-flip').onclick = flipSoftwareLandscape;
+$('#btn-toast-close').onclick = () => { toastDismissed = true; $('#orient-toast').hidden = true; };
+$('#btn-toggle-left-fire').onclick = () => {
+  showLeftFire = !showLeftFire;
+  try { localStorage.setItem('gothic_fps_left_fire', showLeftFire ? '1' : '0'); } catch {}
+  syncLeftFirePref();
+};
+
+// =========================================================================
+// 5B. MOBILE LANDSCAPE FPS TOUCH CONTROLS
+//     Floating Joystick + Auto-Sprint Lock | Right Aim Zone |
+//     Right Fire + Drag-to-Aim | Left Secondary Fire | ADS / Jump / Crouch / Reload
+// =========================================================================
+const moveZone = $('#touch-move-zone');
+const aimZone = $('#touch-aim-zone');
+const touchPad = $('#touch-move');
+const touchKnob = touchPad.querySelector('.touch-knob');
+const sprintLockEl = $('#touch-sprint-lock');
+const btnFire = $('#touch-fire');
+const btnFireLeft = $('#touch-fire-left');
+const btnAds = $('#touch-ads');
+const btnJump = $('#touch-jump');
+const btnCrouch = $('#touch-crouch');
+const btnReload = $('#touch-reload');
+
+let moveId = null, joyOriginX = 0, joyOriginY = 0, sprintLockPrimed = false;
+let aimId = null, aimLastX = 0, aimLastY = 0;
+let fireId = null, fireLastX = 0, fireLastY = 0;
+let leftFireId = null;
+let adsId = null, adsLastX = 0, adsLastY = 0;
+
+function cancelSprintLock() {
+  if (!touchSprintLock) return;
+  touchSprintLock = false;
+  if (moveId === null) {
+    touchDriveX = 0;
+    touchDriveZ = 0;
+    touchSprint = false;
+    touchKnob.style.transform = '';
+    touchPad.classList.remove('active', 'sprinting', 'sprint-locked');
+    sprintLockEl.classList.remove('show', 'primed');
+  } else {
+    touchPad.classList.remove('sprint-locked');
+  }
+}
+
+function resetMobileInputs({ keepCrouch = false } = {}) {
+  moveId = null; aimId = null; fireId = null; leftFireId = null; adsId = null;
+  rightFireActive = false; leftFireActive = false;
+  touchDriveX = 0; touchDriveZ = 0; touchSprint = false; touchSprintLock = false; sprintLockPrimed = false;
+  if (touchPad) {
+    touchPad.style.left = '';
+    touchPad.style.top = '';
+    touchPad.style.bottom = '';
+    touchPad.classList.remove('active', 'sprinting', 'sprint-locked');
+  }
+  if (touchKnob) touchKnob.style.transform = '';
+  if (sprintLockEl) sprintLockEl.classList.remove('show', 'primed');
+  for (const el of [btnFire, btnFireLeft, btnAds, btnJump, btnCrouch, btnReload]) {
+    el?.classList.remove('pressing');
+  }
+  if (!keepCrouch) setCrouch(false);
+}
+
+function applyTouchLook(sdx, sdy) {
+  if (state !== 'playing' || !player.alive) return;
+  const speedPx = Math.hypot(sdx, sdy);
+  // Mobile FPS velocity curve: crisp micro-aiming for headshots + snappy 180 flicks
+  const accel = 0.86 + Math.min(0.64, speedPx * 0.022);
+  const adsMult = mouseAds ? (weapons.current.scoped ? 0.36 : 0.62) : 1;
+  const yawScale = 0.0044 * sensitivity * accel * adsMult;
+  const pitchScale = yawScale * 0.78;
+  player.yaw += sdx * yawScale;
+  player.pitch = T.MathUtils.clamp(player.pitch - sdy * pitchScale, -1.32, 1.32);
+  weapons.addLookSway(sdx * 0.65, sdy * 0.65);
+}
+
+// Left floating joystick with sprint threshold & auto-sprint lock
+function updateJoystickAt(clientX, clientY) {
+  const pt = clientToShell(clientX, clientY);
+  const padR = (touchPad.offsetWidth || 112) / 2;
+  const maxTravel = Math.max(28, padR - 14);
+  const rawDx = pt.x - joyOriginX;
+  const rawDy = pt.y - joyOriginY;
+  const dist = Math.hypot(rawDx, rawDy);
+  let kx = rawDx, ky = rawDy;
+  if (dist > maxTravel) {
+    kx = rawDx * (maxTravel / dist);
+    ky = rawDy * (maxTravel / dist);
+  }
+  touchKnob.style.transform = `translate(${kx.toFixed(1)}px,${ky.toFixed(1)}px)`;
+
+  if (dist < 6) {
+    touchDriveX = 0;
+    touchDriveZ = 0;
+    touchSprint = false;
+    sprintLockPrimed = false;
+  } else {
+    touchDriveX = kx / maxTravel;
+    touchDriveZ = -ky / maxTravel;
+    touchSprint = touchDriveZ > 0.78 && Math.abs(touchDriveX) < 0.56;
+    if (touchSprint && player.crouchToggle) setCrouch(false);
+    sprintLockPrimed = rawDy < -(maxTravel * 1.42) && Math.abs(rawDx) < maxTravel * 0.78;
+  }
+  touchPad.classList.toggle('sprinting', touchSprint);
+  sprintLockEl.classList.toggle('show', touchDriveZ > 0.55);
+  sprintLockEl.classList.toggle('primed', sprintLockPrimed);
+}
+
+moveZone.addEventListener('pointerdown', e => {
+  if (!mobileMode || state !== 'playing' || moveId !== null) return;
+  e.preventDefault();
+  audio.unlock();
+  if (!$('#tab-board').hidden) $('#tab-board').hidden = true;
+  cancelSprintLock();
+  moveId = e.pointerId;
+  moveZone.setPointerCapture?.(e.pointerId);
+
+  const pt = clientToShell(e.clientX, e.clientY);
+  const padSize = touchPad.offsetWidth || 112;
+  const padR = padSize / 2;
+  // Anchor joystick right under left thumb, clamped cleanly within the lower-left zone
+  joyOriginX = T.MathUtils.clamp(pt.x, padR + 10, Math.max(padR + 12, shellW * 0.42 - padR));
+  joyOriginY = T.MathUtils.clamp(pt.y, shellH * 0.30 + padR, Math.max(shellH * 0.32 + padR, shellH - padR - 10));
+  const zoneTop = shellH * 0.22;
+  touchPad.style.left = `${(joyOriginX - padR).toFixed(1)}px`;
+  touchPad.style.top = `${(joyOriginY - zoneTop - padR).toFixed(1)}px`;
+  touchPad.style.bottom = 'auto';
+  touchPad.classList.add('active');
+  updateJoystickAt(e.clientX, e.clientY);
+});
+
+moveZone.addEventListener('pointermove', e => {
+  if (e.pointerId !== moveId) return;
+  e.preventDefault();
+  updateJoystickAt(e.clientX, e.clientY);
+});
+
+for (const ev of ['pointerup', 'pointercancel']) {
+  moveZone.addEventListener(ev, e => {
+    if (e.pointerId !== moveId) return;
+    const engageLock = ev === 'pointerup' && sprintLockPrimed && !isTouchFiring() && !mouseAds;
+    moveId = null;
+    sprintLockPrimed = false;
+    touchPad.style.left = '';
+    touchPad.style.top = '';
+    touchPad.style.bottom = '';
+    sprintLockEl.classList.remove('primed');
+
+    if (engageLock) {
+      touchSprintLock = true;
+      touchDriveX = 0;
+      touchDriveZ = 1;
+      touchSprint = true;
+      const padR = (touchPad.offsetWidth || 112) / 2;
+      const maxTravel = Math.max(28, padR - 14);
+      touchKnob.style.transform = `translate(0px,${(-maxTravel).toFixed(1)}px)`;
+      touchPad.classList.add('active', 'sprinting', 'sprint-locked');
+    } else {
+      touchDriveX = 0;
+      touchDriveZ = 0;
+      touchSprint = false;
+      touchKnob.style.transform = '';
+      touchPad.classList.remove('active', 'sprinting', 'sprint-locked');
+      sprintLockEl.classList.remove('show');
+    }
   });
-  for (const ev of ['pointerup', 'pointercancel']) pad.addEventListener(ev, e => {
-    if (e.pointerId !== padId) return;
-    padId = null; knob.style.transform = ''; touchDriveX = 0; touchDriveZ = 0;
+}
+
+// Right half dedicated camera aim / swipe zone
+aimZone.addEventListener('pointerdown', e => {
+  if (!mobileMode || state !== 'playing' || aimId !== null) return;
+  e.preventDefault();
+  audio.unlock();
+  if (!$('#tab-board').hidden) $('#tab-board').hidden = true;
+  aimId = e.pointerId;
+  aimLastX = e.clientX;
+  aimLastY = e.clientY;
+  aimZone.setPointerCapture?.(e.pointerId);
+});
+aimZone.addEventListener('pointermove', e => {
+  if (e.pointerId !== aimId) return;
+  e.preventDefault();
+  const { dx, dy } = deltaToShell(e.clientX - aimLastX, e.clientY - aimLastY);
+  aimLastX = e.clientX;
+  aimLastY = e.clientY;
+  applyTouchLook(dx, dy);
+});
+for (const ev of ['pointerup', 'pointercancel']) {
+  aimZone.addEventListener(ev, e => { if (e.pointerId === aimId) aimId = null; });
+}
+
+// Primary Right Fire Button (supports hold-to-fire + simultaneous drag-to-aim recoil control!)
+btnFire.addEventListener('pointerdown', e => {
+  if (state !== 'playing') return;
+  e.preventDefault();
+  audio.unlock();
+  cancelSprintLock();
+  fireId = e.pointerId;
+  fireLastX = e.clientX;
+  fireLastY = e.clientY;
+  rightFireActive = true;
+  btnFire.classList.add('pressing');
+  btnFire.setPointerCapture?.(e.pointerId);
+  firePlayerShot();
+});
+btnFire.addEventListener('pointermove', e => {
+  if (e.pointerId !== fireId) return;
+  e.preventDefault();
+  const { dx, dy } = deltaToShell(e.clientX - fireLastX, e.clientY - fireLastY);
+  fireLastX = e.clientX;
+  fireLastY = e.clientY;
+  applyTouchLook(dx, dy);
+});
+for (const ev of ['pointerup', 'pointercancel']) {
+  btnFire.addEventListener(ev, e => {
+    if (e.pointerId !== fireId) return;
+    fireId = null;
+    rightFireActive = false;
+    btnFire.classList.remove('pressing');
   });
-  stage.addEventListener('pointerdown', e => {
-    if (state !== 'playing' || lookId !== null) return;
-    lookId = e.pointerId; lx = e.clientX; ly = e.clientY;
+}
+
+// Secondary Left Fire Button (fixed trigger for clean two-thumb / claw aiming)
+btnFireLeft.addEventListener('pointerdown', e => {
+  if (state !== 'playing') return;
+  e.preventDefault();
+  audio.unlock();
+  cancelSprintLock();
+  leftFireId = e.pointerId;
+  leftFireActive = true;
+  btnFireLeft.classList.add('pressing');
+  btnFireLeft.setPointerCapture?.(e.pointerId);
+  firePlayerShot();
+});
+for (const ev of ['pointerup', 'pointercancel']) {
+  btnFireLeft.addEventListener(ev, e => {
+    if (e.pointerId !== leftFireId) return;
+    leftFireId = null;
+    leftFireActive = false;
+    btnFireLeft.classList.remove('pressing');
   });
-  stage.addEventListener('pointermove', e => {
-    if (e.pointerId !== lookId) return;
-    player.yaw += (e.clientX - lx) * .0045 * sensitivity;
-    player.pitch = T.MathUtils.clamp(player.pitch - (e.clientY - ly) * .0045 * sensitivity, -1.32, 1.32);
-    lx = e.clientX; ly = e.clientY;
+}
+
+// ADS / Scope Button (tap toggles ADS, dragging while held also micro-aims!)
+btnAds.addEventListener('pointerdown', e => {
+  if (state !== 'playing') return;
+  e.preventDefault();
+  audio.unlock();
+  cancelSprintLock();
+  adsId = e.pointerId;
+  adsLastX = e.clientX;
+  adsLastY = e.clientY;
+  setAds(!mouseAds);
+  btnAds.classList.add('pressing');
+  btnAds.setPointerCapture?.(e.pointerId);
+});
+btnAds.addEventListener('pointermove', e => {
+  if (e.pointerId !== adsId) return;
+  e.preventDefault();
+  const { dx, dy } = deltaToShell(e.clientX - adsLastX, e.clientY - adsLastY);
+  adsLastX = e.clientX;
+  adsLastY = e.clientY;
+  applyTouchLook(dx, dy);
+});
+for (const ev of ['pointerup', 'pointercancel']) {
+  btnAds.addEventListener(ev, e => {
+    if (e.pointerId !== adsId) return;
+    adsId = null;
+    btnAds.classList.remove('pressing');
   });
-  for (const ev of ['pointerup', 'pointercancel']) stage.addEventListener(ev, e => { if (e.pointerId === lookId) lookId = null; });
-  $('#touch-fire').addEventListener('pointerdown', () => { mouseFire = true; firePlayerShot(); });
-  for (const ev of ['pointerup', 'pointercancel']) $('#touch-fire').addEventListener(ev, () => { mouseFire = false; });
-  $('#touch-ads').onclick = () => { mouseAds = !mouseAds; };
-  $('#touch-jump').onclick = () => {
-    player.jumpBuf = .14;
-    if (player.grounded || player.coyote > 0) { player.velY = 7.3; player.grounded = false; player.coyote = 0; player.jumpBuf = 0; }
-  };
-  $('#touch-crouch').onclick = () => {
-    player.crouchToggle = !player.crouchToggle;
-    $('#touch-crouch').setAttribute('aria-pressed', String(player.crouchToggle));
-  };
-  $('#touch-reload').onclick = () => { if (weapons.startReload()) audio.reload(); };
+}
+
+// Jump, Crouch & Reload Tactile Buttons
+btnJump.addEventListener('pointerdown', e => {
+  if (state !== 'playing') return;
+  e.preventDefault();
+  audio.unlock();
+  btnJump.classList.add('pressing');
+  triggerJump();
+});
+for (const ev of ['pointerup', 'pointercancel', 'pointerleave']) {
+  btnJump.addEventListener(ev, () => btnJump.classList.remove('pressing'));
+}
+
+btnCrouch.addEventListener('pointerdown', e => {
+  if (state !== 'playing') return;
+  e.preventDefault();
+  audio.unlock();
+  cancelSprintLock();
+  btnCrouch.classList.add('pressing');
+  setCrouch(!player.crouchToggle);
+});
+for (const ev of ['pointerup', 'pointercancel', 'pointerleave']) {
+  btnCrouch.addEventListener(ev, () => btnCrouch.classList.remove('pressing'));
+}
+
+btnReload.addEventListener('pointerdown', e => {
+  if (state !== 'playing') return;
+  e.preventDefault();
+  audio.unlock();
+  btnReload.classList.add('pressing');
+  if (weapons.startReload()) audio.reload();
+});
+for (const ev of ['pointerup', 'pointercancel', 'pointerleave']) {
+  btnReload.addEventListener(ev, () => btnReload.classList.remove('pressing'));
 }
 
 // =========================================================================
@@ -725,7 +1188,8 @@ function tick(now) {
       let strafe = (keys.has('d') || keys.has('arrowright') ? 1 : 0) - (keys.has('a') || keys.has('arrowleft') ? 1 : 0) + touchDriveX;
       const mag = Math.hypot(fwd, strafe);
       if (mag > 1) { fwd /= mag; strafe /= mag; }
-      player.sprinting = Boolean(!player.crouched && keys.has('shift') && fwd > .2 && !mouseAds && !weapons.isReloading);
+      const wantSprint = keys.has('shift') || ((touchSprint || touchSprintLock) && !isTouchFiring());
+      player.sprinting = Boolean(!player.crouched && wantSprint && fwd > .2 && !mouseAds && !weapons.isReloading);
       const baseSpeed = player.crouched ? 4.2 : player.sprinting ? 10.2 : mouseAds ? 4.4 : 7.0;
       const prevX = player.x, prevZ = player.z;
       if (mag > .02) {
@@ -795,7 +1259,7 @@ function tick(now) {
       camera.rotation.set(player.pitch, -player.yaw, 0, 'YXZ');
 
       // Full-auto firing
-      if (mouseFire && weapons.current.auto) firePlayerShot();
+      if ((mouseFire || isTouchFiring()) && weapons.current.auto) firePlayerShot();
 
       // Weapon viewmodel + ADS FOV
       const ws = weapons.update(dt, {
@@ -819,11 +1283,14 @@ function tick(now) {
       // Reload progress UI
       $('#reload-bar').hidden = !ws.reloading;
       if (ws.reloading) $('#reload-fill').style.width = `${(ws.reloadProgress * 100).toFixed(1)}%`;
+      btnReload?.classList.toggle('reloading', ws.reloading);
 
       stage.dataset.playerY = player.y.toFixed(2);
       stage.dataset.eyeY = eyeHeight.toFixed(2);
       stage.dataset.crouched = String(player.crouched);
       stage.dataset.scoped = String(ws.scopedView);
+      stage.dataset.sprinting = String(player.sprinting);
+      stage.dataset.yaw = player.yaw.toFixed(3);
     }
 
     // Hitmarker & damage overlays fade
