@@ -1,0 +1,15 @@
+{
+  "checks": [
+    "Gothic cathedral WebGL arena loads with lobby and 3 difficulty tiers",
+    "Bot matchmaking enters 4v4 arena with HUD, radar and M4-圣堂 rifle",
+    "Player jumps cleanly with gravity and lands on cathedral flagstones",
+    "Firing consumes ammo and R triggers animated reload",
+    "Weapon slots switch to SMG and Sniper with optical ADS scope",
+    "Pause menu switches bot difficulty cleanly between Hard and Easy",
+    "4v4 scoreboard displays 4 Blue Wardens and 4 Red Phantoms",
+    "Mobile viewport fits with zero horizontal overflow",
+    "Zero uncaught exceptions and zero WebGL shader errors"
+  ],
+  "failures": [],
+  "shaderErrors": []
+}

@@ -1,0 +1,222 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="theme-color" content="#0d1522">
+  <title>暮影圣堂 · Gothic Crypt FPS</title>
+  <link rel="stylesheet" href="./style.css">
+  <link rel="icon" href="data:,">
+  <script type="importmap">{"imports":{"three":"./assets/three.module.min.js"}}</script>
+  <script src="./main.js" type="module"></script>
+</head>
+<body>
+  <main class="game-shell">
+    <div id="stage" tabindex="0" aria-label="暮影圣堂三维第一人称射击画布"></div>
+
+    <!-- Vignette, damage flash & sniper optical scope overlays -->
+    <div id="damage-vignette" class="damage-vignette" aria-hidden="true"></div>
+    <div id="damage-arc" class="damage-arc" aria-hidden="true"></div>
+    <div id="sniper-scope" class="sniper-scope" aria-hidden="true" hidden>
+      <div class="scope-lens"><i></i><i></i><span class="scope-dot"></span></div>
+    </div>
+
+    <!-- Dynamic FPS Crosshair & Hitmarker -->
+    <div id="crosshair" class="crosshair" aria-hidden="true" hidden>
+      <span class="ch-dot"></span>
+      <i class="ch-t"></i><i class="ch-b"></i><i class="ch-l"></i><i class="ch-r"></i>
+      <div id="hitmarker" class="hitmarker"><i></i><i></i><i></i><i></i></div>
+      <div id="hit-badge" class="hit-badge" hidden>爆头!</div>
+    </div>
+
+    <!-- In-Game Tactical HUD -->
+    <div id="hud" class="hud" hidden>
+      <canvas id="radar" class="radar" width="164" height="164" aria-label="战术雷达小地图"></canvas>
+
+      <header class="scoreboard-bar" aria-label="比分与倒计时">
+        <div class="team-pill blue"><span>守夜蓝队</span><strong id="score-blue">0</strong></div>
+        <div class="match-clock">
+          <strong id="clock">04:30</strong>
+          <small><span id="diff-pill">普通</span> · 目标 20 杀</small>
+        </div>
+        <div class="team-pill red"><strong id="score-red">0</strong><span>猩红红队</span></div>
+      </header>
+
+      <div id="killfeed" class="killfeed" aria-live="polite"></div>
+
+      <div id="lock-hint" class="lock-hint" hidden>点击画面锁定 FPS 鼠标准星 · 按 <kbd>Esc</kbd> 暂停 / 切换难度</div>
+      <div id="respawn-banner" class="respawn-banner" hidden>
+        <strong>已被击倒</strong>
+        <span id="respawn-text">3 秒后重返圣堂…</span>
+      </div>
+
+      <section class="vitality-box" aria-label="生命与护盾">
+        <div class="vital-row">
+          <span class="vital-label">护盾</span>
+          <div class="bar-track shield"><i id="shield-fill"></i></div>
+          <strong id="shield-val">50</strong>
+        </div>
+        <div class="vital-row">
+          <span class="vital-label">生命</span>
+          <div class="bar-track hp"><i id="hp-fill"></i></div>
+          <strong id="hp-val">100</strong>
+        </div>
+        <div class="player-mini-stat">
+          <span id="kd-mini">击杀 0 · 阵亡 0 · 爆头 0</span>
+        </div>
+      </section>
+
+      <section class="weapon-box" aria-label="武器与弹药">
+        <div class="weapon-head">
+          <div>
+            <strong id="weapon-name">M4-圣堂</strong>
+            <small id="weapon-sub">突击步枪</small>
+          </div>
+          <div class="ammo-readout"><strong id="ammo-cur">30</strong><span>/ ∞</span></div>
+        </div>
+        <div id="reload-bar" class="reload-bar" hidden><i id="reload-fill"></i><span>换弹中…</span></div>
+        <div class="weapon-slots" role="group" aria-label="切换武器">
+          <button type="button" data-slot="0" class="active"><kbd>1</kbd> 步枪</button>
+          <button type="button" data-slot="1"><kbd>2</kbd> 冲锋</button>
+          <button type="button" data-slot="2"><kbd>3</kbd> 狙击</button>
+        </div>
+      </section>
+
+      <div class="hud-quick-keys">
+        <span><kbd>WASD</kbd> 移动</span>
+        <span><kbd>Space</kbd> 跳跃</span>
+        <span><kbd>Shift</kbd> 疾跑</span>
+        <span><kbd>左键</kbd> 射击</span>
+        <span><kbd>右键</kbd> 开镜</span>
+        <span><kbd>R</kbd> 换弹</span>
+        <span><kbd>Tab</kbd> 战绩</span>
+        <span><kbd>M</kbd> 静音</span>
+      </div>
+
+      <!-- Mobile touch action bar (hidden on desktop) -->
+      <div class="touch-controls" id="touch-controls" hidden>
+        <div class="touch-pad" id="touch-move"><span class="touch-knob"></span></div>
+        <div class="touch-btns">
+          <button type="button" id="touch-fire" class="t-fire">开火</button>
+          <button type="button" id="touch-ads">开镜</button>
+          <button type="button" id="touch-jump">跳跃</button>
+          <button type="button" id="touch-reload">换弹</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- Hold-Tab Live Scoreboard -->
+    <section id="tab-board" class="overlay-card tab-board" hidden>
+      <div class="tab-head">
+        <h2>暮影圣堂 · 实时战绩</h2>
+        <span id="tab-diff-label">4v4 人机对战 · 普通难度</span>
+      </div>
+      <div class="tab-cols">
+        <div>
+          <h3 class="blue-title">守夜蓝队</h3>
+          <table class="score-table"><thead><tr><th>特勤</th><th>击杀</th><th>阵亡</th></tr></thead><tbody id="tab-blue"></tbody></table>
+        </div>
+        <div>
+          <h3 class="red-title">猩红红队</h3>
+          <table class="score-table"><thead><tr><th>影徒</th><th>击杀</th><th>阵亡</th></tr></thead><tbody id="tab-red"></tbody></table>
+        </div>
+      </div>
+    </section>
+
+    <!-- Matchmaking Lobby Overlay -->
+    <section id="lobby" class="overlay-backdrop" role="dialog" aria-labelledby="lobby-title">
+      <div class="lobby-card">
+        <div class="lobby-eyebrow">GOTHIC CATHEDRAL &amp; ANCIENT CRYPT · 4V4 BOT MATCHMAKING</div>
+        <h1 id="lobby-title">暮影圣堂 <span>FPS</span></h1>
+        <p class="lobby-sub">月下破损红教堂、雾林古墓园与地下石棺回廊。三路立体攻防，选择 AI 难度开始 4v4 战术人机匹配。</p>
+
+        <div class="diff-grid" role="radiogroup" aria-label="选择人机匹配难度">
+          <button type="button" class="diff-card" data-diff="easy" aria-pressed="false">
+            <div class="diff-top"><strong>简单</strong><span class="diff-tag">见习守夜</span></div>
+            <p>AI 反应较慢、散布较宽，沿主路巡逻推进，适合熟悉古墓教堂地形与压枪。</p>
+            <small>反应 520ms · 散布 ±8.5° · 低频走位</small>
+          </button>
+          <button type="button" class="diff-card active" data-diff="normal" aria-pressed="true">
+            <div class="diff-top"><strong>普通</strong><span class="diff-tag">圣堂猎手</span></div>
+            <p>三路协同推进，具备标准反应、中距离急停走位与掩体换弹意识。</p>
+            <small>反应 280ms · 散布 ±4.2° · 战术包抄</small>
+          </button>
+          <button type="button" class="diff-card" data-diff="hard" aria-pressed="false">
+            <div class="diff-top"><strong>困难</strong><span class="diff-tag">古墓梦魇</span></div>
+            <p>精英 AI 极速反拉枪、高爆头倾向，主动抢占教堂祭坛高台并高频急停跳枪。</p>
+            <small>反应 145ms · 散布 ±1.9° · 高台压制</small>
+          </button>
+        </div>
+
+        <div class="lobby-loadout">
+          <span>初始主武器</span>
+          <div class="loadout-pills" role="group" aria-label="选择初始武器">
+            <button type="button" class="active" data-loadout="0" aria-pressed="true">M4-圣堂 步枪</button>
+            <button type="button" data-loadout="1" aria-pressed="false">VX-9 影袭冲锋</button>
+            <button type="button" data-loadout="2" aria-pressed="false">AWP-猎月 狙击</button>
+          </div>
+        </div>
+
+        <div id="matchmaking-status" class="matchmaking-status" hidden>
+          <span class="mm-spinner" aria-hidden="true"></span>
+          <span id="mm-text">正在匹配 4v4 人机小队…</span>
+        </div>
+
+        <div class="lobby-actions">
+          <button type="button" id="start-match" class="btn-primary">开始人机匹配</button>
+          <button type="button" id="toggle-mute-lobby" class="btn-ghost" aria-pressed="false">音效：开启</button>
+        </div>
+
+        <div class="lobby-controls-note">
+          <span><kbd>WASD</kbd> 移动</span>
+          <span><kbd>Space</kbd> 跳跃/上箱</span>
+          <span><kbd>Shift</kbd> 疾跑</span>
+          <span><kbd>左键</kbd> 开火</span>
+          <span><kbd>右键</kbd> 红点/狙击开镜</span>
+          <span><kbd>R</kbd> 换弹</span>
+          <span><kbd>1</kbd><kbd>2</kbd><kbd>3</kbd> 切枪</span>
+        </div>
+      </div>
+    </section>
+
+    <!-- Pause / Settings Overlay -->
+    <section id="pause-menu" class="overlay-backdrop" role="dialog" aria-labelledby="pause-title" hidden>
+      <div class="modal-card">
+        <div class="lobby-eyebrow">TACTICAL PAUSE</div>
+        <h2 id="pause-title">对局已暂停</h2>
+        <div class="setting-row">
+          <label for="sens-slider">鼠标灵敏度 <strong id="sens-val">1.0</strong></label>
+          <input id="sens-slider" type="range" min="0.4" max="2.4" step="0.1" value="1.0">
+        </div>
+        <div class="setting-row">
+          <span>切换难度重开</span>
+          <div class="pause-diffs">
+            <button type="button" data-restart-diff="easy">简单</button>
+            <button type="button" data-restart-diff="normal">普通</button>
+            <button type="button" data-restart-diff="hard">困难</button>
+          </div>
+        </div>
+        <div class="modal-actions">
+          <button type="button" id="btn-resume" class="btn-primary">继续战斗</button>
+          <button type="button" id="btn-mute" class="btn-ghost">音效：开启</button>
+          <button type="button" id="btn-lobby" class="btn-ghost">返回大厅</button>
+        </div>
+      </div>
+    </section>
+
+    <!-- Match End Summary Overlay -->
+    <section id="end-screen" class="overlay-backdrop" role="dialog" aria-labelledby="end-title" hidden>
+      <div class="modal-card end-card">
+        <div class="lobby-eyebrow" id="end-sub">4V4 人机对局结算</div>
+        <h2 id="end-title">胜利 · 守夜蓝队胜出</h2>
+        <div class="end-score-line"><strong class="blue-text" id="end-blue">20</strong><span>:</span><strong class="red-text" id="end-red">14</strong></div>
+        <div class="end-stats" id="end-stats"></div>
+        <div class="modal-actions">
+          <button type="button" id="btn-rematch" class="btn-primary">再来一局</button>
+          <button type="button" id="btn-end-lobby" class="btn-ghost">更换难度</button>
+        </div>
+      </div>
+    </section>
+  </main>
+</body>
+</html>
