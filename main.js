@@ -5,6 +5,7 @@ import { createGothicArena } from './arena.js';
 import { createWeaponSystem, WEAPONS } from './weapons.js';
 import { createAudio } from './audio.js';
 import { createBotManager, DIFFICULTIES } from './ai.js';
+import { createGothicPostFX } from './postfx.js';
 
 const $ = s => document.querySelector(s);
 const shell = $('.game-shell');
@@ -35,11 +36,13 @@ stage.append(renderer.domElement);
 const sky = createGothicSky(renderer);
 scene.background = sky.background;
 scene.environment = sky.environment;
-scene.environmentIntensity = .72;
+scene.environmentIntensity = 1.38;
+
+const postfx = createGothicPostFX(renderer);
 
 // Cool moonlit key light + twilight sky/ground fill (crisp Identity V visibility)
-const hemi = new T.HemisphereLight('#8cb6e0', '#333b42', 1.32);
-const moon = new T.DirectionalLight('#c2dcf8', 2.15);
+const hemi = new T.HemisphereLight('#8cb6e0', '#38343d', 1.52);
+const moon = new T.DirectionalLight('#d0e4ff', 2.65);
 moon.position.set(36, 56, -42);
 moon.castShadow = true;
 moon.shadow.mapSize.setScalar(matchMedia('(max-width: 700px)').matches ? 1024 : 2048);
@@ -165,10 +168,21 @@ botMgr.initMatch(selectedDiff);
 function setAds(on) {
   mouseAds = Boolean(on);
   $('#touch-ads')?.setAttribute('aria-pressed', String(mouseAds));
+  if (mouseAds && weapons.current.scoped) {
+    stage.dataset.scoped = 'true';
+    $('#sniper-scope').hidden = false;
+    $('#crosshair').hidden = true;
+  } else if (!mouseAds) {
+    stage.dataset.scoped = 'false';
+    $('#sniper-scope').hidden = true;
+    if (state === 'playing') $('#crosshair').hidden = false;
+  }
 }
 
 function setCrouch(on) {
   player.crouchToggle = Boolean(on);
+  player.crouched = player.crouchToggle;
+  stage.dataset.crouched = String(player.crouched);
   $('#touch-crouch')?.setAttribute('aria-pressed', String(player.crouchToggle));
 }
 
@@ -442,6 +456,8 @@ function resize() {
   camera.aspect = w / h;
   camera.updateProjectionMatrix();
   renderer.setSize(w, h, false);
+  const fxDpr = mobileMode ? Math.min(1.0, renderer.getPixelRatio()) : renderer.getPixelRatio();
+  postfx.setSize(w, h, fxDpr);
 }
 
 const forceMobileParam = new URLSearchParams(location.search).get('mobile') === '1';
@@ -509,7 +525,7 @@ function updateViewportLayout() {
     shell.style.removeProperty('--shell-h');
   }
   shell.classList.toggle('compact-h', mobileMode && shellH <= 380);
-  renderer.setPixelRatio(Math.min(devicePixelRatio, mobileMode ? 1.5 : 1.75));
+  renderer.setPixelRatio(Math.min(devicePixelRatio, mobileMode ? 1.25 : 1.75));
   stage.dataset.mobile = String(mobileMode);
   stage.dataset.rotMode = String(rotMode);
 
@@ -717,10 +733,10 @@ document.querySelectorAll('[data-loadout]').forEach(btn => {
 });
 
 let matchTimer = null;
-$('#start-match').onclick = () => {
+$('#start-match').onclick = e => {
   if (state === 'matching') return;
   audio.unlock();
-  if (mobileMode && !document.fullscreenElement) tryEnterLandscapeFullscreen();
+  if (mobileMode && !document.fullscreenElement && e?.isTrusted) tryEnterLandscapeFullscreen();
   state = 'matching';
   stage.dataset.state = state;
   const mmBox = $('#matchmaking-status'), mmText = $('#mm-text');
@@ -885,6 +901,7 @@ function applyTouchLook(sdx, sdy) {
   const pitchScale = yawScale * 0.78;
   player.yaw += sdx * yawScale;
   player.pitch = T.MathUtils.clamp(player.pitch - sdy * pitchScale, -1.32, 1.32);
+  stage.dataset.yaw = player.yaw.toFixed(3);
   weapons.addLookSway(sdx * 0.65, sdy * 0.65);
 }
 
@@ -916,6 +933,7 @@ function updateJoystickAt(clientX, clientY) {
     sprintLockPrimed = rawDy < -(maxTravel * 1.42) && Math.abs(rawDx) < maxTravel * 0.78;
   }
   touchPad.classList.toggle('sprinting', touchSprint);
+  stage.dataset.sprinting = String(Boolean(!player.crouched && (touchSprint || touchSprintLock) && touchDriveZ > .2 && !mouseAds && !weapons.isReloading));
   sprintLockEl.classList.toggle('show', touchDriveZ > 0.55);
   sprintLockEl.classList.toggle('primed', sprintLockPrimed);
 }
@@ -927,7 +945,7 @@ moveZone.addEventListener('pointerdown', e => {
   if (!$('#tab-board').hidden) $('#tab-board').hidden = true;
   cancelSprintLock();
   moveId = e.pointerId;
-  moveZone.setPointerCapture?.(e.pointerId);
+  try { moveZone.setPointerCapture?.(e.pointerId); } catch {}
 
   const pt = clientToShell(e.clientX, e.clientY);
   const padSize = touchPad.offsetWidth || 112;
@@ -989,7 +1007,7 @@ aimZone.addEventListener('pointerdown', e => {
   aimId = e.pointerId;
   aimLastX = e.clientX;
   aimLastY = e.clientY;
-  aimZone.setPointerCapture?.(e.pointerId);
+  try { aimZone.setPointerCapture?.(e.pointerId); } catch {}
 });
 aimZone.addEventListener('pointermove', e => {
   if (e.pointerId !== aimId) return;
@@ -1014,7 +1032,7 @@ btnFire.addEventListener('pointerdown', e => {
   fireLastY = e.clientY;
   rightFireActive = true;
   btnFire.classList.add('pressing');
-  btnFire.setPointerCapture?.(e.pointerId);
+  try { btnFire.setPointerCapture?.(e.pointerId); } catch {}
   firePlayerShot();
 });
 btnFire.addEventListener('pointermove', e => {
@@ -1043,7 +1061,7 @@ btnFireLeft.addEventListener('pointerdown', e => {
   leftFireId = e.pointerId;
   leftFireActive = true;
   btnFireLeft.classList.add('pressing');
-  btnFireLeft.setPointerCapture?.(e.pointerId);
+  try { btnFireLeft.setPointerCapture?.(e.pointerId); } catch {}
   firePlayerShot();
 });
 for (const ev of ['pointerup', 'pointercancel']) {
@@ -1066,7 +1084,7 @@ btnAds.addEventListener('pointerdown', e => {
   adsLastY = e.clientY;
   setAds(!mouseAds);
   btnAds.classList.add('pressing');
-  btnAds.setPointerCapture?.(e.pointerId);
+  try { btnAds.setPointerCapture?.(e.pointerId); } catch {}
 });
 btnAds.addEventListener('pointermove', e => {
   if (e.pointerId !== adsId) return;
@@ -1140,7 +1158,7 @@ function tick(now) {
     camera.lookAt(0, 4.2, 0);
     weapons.update(dt, { speed: 0, aiming: false, visible: false });
     botMgr.update(dt, player, false);
-    renderer.render(scene, camera);
+    postfx.render(scene, camera, tSec);
     requestAnimationFrame(tick);
     return;
   }
@@ -1318,7 +1336,7 @@ function tick(now) {
     drawRadar();
   }
 
-  renderer.render(scene, camera);
+  postfx.render(scene, camera, tSec);
   requestAnimationFrame(tick);
 }
 

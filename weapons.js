@@ -35,14 +35,15 @@ export const WEAPONS = [
 
 function buildWeaponMesh(id) {
   const g = new T.Group();
-  const metal = new T.MeshStandardMaterial({ color: '#272e36', roughness: .38, metalness: .76 });
-  const darkMetal = new T.MeshStandardMaterial({ color: '#171b20', roughness: .52, metalness: .64 });
-  const goldTrim = new T.MeshStandardMaterial({ color: '#c8a35a', roughness: .35, metalness: .72 });
-  const woodGrip = new T.MeshStandardMaterial({ color: '#3b2820', roughness: .76, metalness: .08 });
-  const gloveMat = new T.MeshStandardMaterial({ color: '#222830', roughness: .82 });
-  const sleeveMat = new T.MeshStandardMaterial({ color: '#1b4357', roughness: .84 });
-  const redDot = new T.MeshBasicMaterial({ color: '#ff5244' });
-  const lensMat = new T.MeshBasicMaterial({ color: '#7ad8ff', transparent: true, opacity: .18 });
+  const metal = new T.MeshStandardMaterial({ color: '#272e36', roughness: .32, metalness: .82 });
+  const darkMetal = new T.MeshStandardMaterial({ color: '#171b20', roughness: .46, metalness: .72 });
+  const goldTrim = new T.MeshStandardMaterial({ color: '#dcb464', roughness: .26, metalness: .88, emissive: new T.Color('#5a3c0e'), emissiveIntensity: .35 });
+  const woodGrip = new T.MeshStandardMaterial({ color: '#422c22', roughness: .72, metalness: .08 });
+  const gloveMat = new T.MeshStandardMaterial({ color: '#222830', roughness: .78 });
+  const sleeveMat = new T.MeshStandardMaterial({ color: '#1b4357', roughness: .82 });
+  const redDot = new T.MeshBasicMaterial({ color: new T.Color(2.6, 0.45, 0.35) });
+  const cyanDot = new T.MeshBasicMaterial({ color: new T.Color(0.45, 2.2, 2.6) });
+  const lensMat = new T.MeshBasicMaterial({ color: '#7ad8ff', transparent: true, opacity: .22 });
 
   const part = (w, h, d, mat, x, y, z, rx = 0, ry = 0, rz = 0) => {
     const m = new T.Mesh(new T.BoxGeometry(w, h, d), mat);
@@ -59,11 +60,17 @@ function buildWeaponMesh(id) {
     part(.062, .016, .36, darkMetal, 0, .064, -.06);       // Top picatinny rail
     part(.048, .064, .28, darkMetal, 0, .022, -.34);       // Handguard
     part(.064, .014, .22, goldTrim, 0, .035, -.05);        // Gothic gold filigree accent
+    part(.008, .026, .072, goldTrim, .029, .028, -.03);    // Brass ejection port cover
+    part(.038, .012, .042, goldTrim, 0, .058, .12);        // Rear charging handle
+    for (let i = 0; i < 4; i++) {
+      part(.054, .024, .018, goldTrim, 0, .022, -.24 - i * .055); // Ventilated quad-rail brass ribs
+    }
+    part(.030, .048, .075, darkMetal, 0, -.025, -.33, -.35); // Angled tactical foregrip
     const barrel = new T.Mesh(new T.CylinderGeometry(.014, .016, .26, 10), darkMetal);
     barrel.rotation.x = Math.PI / 2;
     barrel.position.set(0, .028, -.58);
     g.add(barrel);
-    const comp = new T.Mesh(new T.CylinderGeometry(.019, .019, .065, 8), metal);
+    const comp = new T.Mesh(new T.CylinderGeometry(.019, .019, .065, 8), goldTrim);
     comp.rotation.x = Math.PI / 2;
     comp.position.set(0, .028, -.71);
     g.add(comp);
@@ -72,54 +79,89 @@ function buildWeaponMesh(id) {
     part(.046, .012, .09, darkMetal, 0, .078, -.02);
     part(.008, .048, .07, darkMetal, -.021, .106, -.02);
     part(.008, .048, .07, darkMetal, .021, .106, -.02);
-    part(.050, .008, .07, darkMetal, 0, .132, -.02);
+    part(.050, .008, .07, goldTrim, 0, .132, -.02);
     part(.034, .038, .004, lensMat, 0, .106, -.02);
-    const dot = new T.Mesh(new T.SphereGeometry(.0032, 6, 6), redDot);
+    const dot = new T.Mesh(new T.SphereGeometry(.0035, 6, 6), redDot);
     dot.position.set(0, .106, -.02);
     g.add(dot);
-    // Stock & Grip
+    // Stock, Cheek-rest & Grip
     part(.048, .085, .20, woodGrip, 0, .01, .21);
+    part(.052, .022, .13, darkMetal, 0, .056, .22);        // Raised cheek rest
+    part(.052, .096, .024, darkMetal, 0, .006, .315);      // Rubberized buttpad
     part(.038, .12, .046, woodGrip, 0, -.065, .07, .28);
     mag = part(.034, .165, .056, darkMetal, 0, -.095, -.11, -.16);
   } else if (id === 'smg') {
     part(.054, .078, .28, darkMetal, 0, .02, -.04);
     part(.058, .014, .22, goldTrim, 0, .042, -.06);
-    const suppressor = new T.Mesh(new T.CylinderGeometry(.021, .021, .20, 10), metal);
+    // Side tactical laser module with glowing cyan emitter
+    part(.022, .024, .075, metal, .036, .022, -.13);
+    const laserDot = new T.Mesh(new T.SphereGeometry(.005, 6, 6), cyanDot);
+    laserDot.position.set(.036, .022, -.17);
+    g.add(laserDot);
+    const suppressor = new T.Mesh(new T.CylinderGeometry(.021, .021, .20, 12), metal);
     suppressor.rotation.x = Math.PI / 2;
     suppressor.position.set(0, .024, -.28);
     g.add(suppressor);
+    for (let i = 0; i < 3; i++) {
+      const ring = new T.Mesh(new T.CylinderGeometry(.023, .023, .012, 12), goldTrim);
+      ring.rotation.x = Math.PI / 2;
+      ring.position.set(0, .024, -.21 - i * .065);
+      g.add(ring);
+    }
     muzzleZ = -.40;
     // Compact reflex sight
     part(.040, .010, .065, metal, 0, .066, -.02);
     part(.006, .040, .05, metal, -.018, .090, -.02);
     part(.006, .040, .05, metal, .018, .090, -.02);
-    part(.042, .006, .05, metal, 0, .112, -.02);
-    const dot = new T.Mesh(new T.SphereGeometry(.003, 6, 6), new T.MeshBasicMaterial({ color: '#58e2ff' }));
+    part(.042, .006, .05, goldTrim, 0, .112, -.02);
+    const dot = new T.Mesh(new T.SphereGeometry(.0034, 6, 6), cyanDot);
     dot.position.set(0, .090, -.02);
     g.add(dot);
     part(.036, .11, .042, darkMetal, 0, -.06, .05, .22);
+    part(.016, .018, .17, metal, 0, .032, .18);            // Skeleton folding stock Strut
+    part(.042, .082, .018, darkMetal, 0, .012, .265);      // Stock buttplate
     mag = part(.026, .195, .036, metal, 0, -.11, -.12, -.06);
   } else {
     // AWP-LUNAR Gothic Sniper Rifle
-    part(.062, .088, .40, new T.MeshStandardMaterial({ color: '#24343b', roughness: .54, metalness: .35 }), 0, .018, -.06);
+    part(.062, .088, .40, new T.MeshStandardMaterial({ color: '#24343b', roughness: .48, metalness: .42 }), 0, .018, -.06);
     part(.066, .014, .26, goldTrim, 0, .036, -.12);
+    // Bolt handle + brass sphere knob
+    part(.045, .010, .012, metal, .045, .036, .02, 0, 0, -.25);
+    const knob = new T.Mesh(new T.SphereGeometry(.013, 8, 8), goldTrim);
+    knob.position.set(.068, .030, .02);
+    g.add(knob);
+    // Folded forward bipod legs under chassis
+    for (const s of [-1, 1]) {
+      const leg = new T.Mesh(new T.CylinderGeometry(.006, .006, .20, 6), metal);
+      leg.rotation.x = Math.PI / 2;
+      leg.position.set(s * .026, -.026, -.28);
+      g.add(leg);
+    }
     const barrel = new T.Mesh(new T.CylinderGeometry(.016, .020, .54, 10), darkMetal);
     barrel.rotation.x = Math.PI / 2;
     barrel.position.set(0, .036, -.52);
     g.add(barrel);
-    const brake = part(.042, .034, .075, metal, 0, .036, -.80);
+    const brake = part(.044, .036, .082, goldTrim, 0, .036, -.80);
     brake.castShadow = false;
     muzzleZ = -.85;
-    // Long sniper scope tube
+    // Long sniper scope tube + brass scope rings + sapphire objective lens
     const scope = new T.Mesh(new T.CylinderGeometry(.024, .020, .30, 12), darkMetal);
     scope.rotation.x = Math.PI / 2;
     scope.position.set(0, .105, -.07);
     g.add(scope);
+    for (const rz of [-.01, -.14]) {
+      part(.052, .042, .018, goldTrim, 0, .092, rz);
+    }
     const scopeBell = new T.Mesh(new T.CylinderGeometry(.032, .024, .08, 12), darkMetal);
     scopeBell.rotation.x = Math.PI / 2;
     scopeBell.position.set(0, .105, -.25);
     g.add(scopeBell);
+    const objLens = new T.Mesh(new T.CylinderGeometry(.028, .028, .006, 12), lensMat);
+    objLens.rotation.x = Math.PI / 2;
+    objLens.position.set(0, .105, -.291);
+    g.add(objLens);
     part(.048, .09, .24, woodGrip, 0, .005, .24);
+    part(.052, .026, .14, goldTrim, 0, .056, .23);         // Adjustable cheek rest
     part(.038, .12, .048, woodGrip, 0, -.065, .09, .26);
     mag = part(.036, .11, .075, darkMetal, 0, -.065, -.09, -.05);
   }
@@ -130,11 +172,11 @@ function buildWeaponMesh(id) {
   part(.058, .052, .09, gloveMat, -.025, -.025, -.22, 0, .25);           // Left support hand
   part(.068, .068, .26, sleeveMat, -.13, -.10, -.05, .18, .52);          // Left forearm
 
-  // Muzzle flash star
+  // Muzzle flash star (HDR bright for URP Bloom!)
   const flashGroup = new T.Group();
   flashGroup.position.set(0, .03, muzzleZ);
   flashGroup.visible = false;
-  const fMat = new T.MeshBasicMaterial({ color: '#ffe196', transparent: true, opacity: .94, blending: T.AdditiveBlending, depthWrite: false });
+  const fMat = new T.MeshBasicMaterial({ color: new T.Color(2.8, 2.2, 1.25), transparent: true, opacity: .94, blending: T.AdditiveBlending, depthWrite: false });
   const f1 = new T.Mesh(new T.OctahedronGeometry(.085, 0), fMat);
   f1.scale.set(1, 1, 2.2);
   const f2 = new T.Mesh(new T.PlaneGeometry(.24, .24), fMat);

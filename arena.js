@@ -106,11 +106,11 @@ export function createGothicArena(scene, mats) {
 
     let light = null;
     if (withPointLight) {
-      light = new T.PointLight('#ffaa52', 14, 22, 1.55);
+      light = new T.PointLight('#ffaa52', 24, 26, 1.55);
       light.position.set(x, height + .1, z);
       group.add(light);
     }
-    lanterns.push({ light, glass, baseIntensity: 14, phase: (x * .37 + z * .51) });
+    lanterns.push({ light, glass, baseIntensity: 24, phase: (x * .37 + z * .51) });
   }
 
   // Twisted dead Gothic tree (signature Identity V cemetery mood!)
@@ -229,11 +229,42 @@ export function createGothicArena(scene, mats) {
       finial.position.set(px, 6.95, pz);
       group.add(finial);
     }
+    if (p < 32) {
+      const mid = p + 4;
+      for (const sz of [-B, B]) {
+        const rail = new T.Mesh(new T.BoxGeometry(6.2, .12, .12), mats.iron);
+        rail.position.set(mid, 6.15, sz);
+        group.add(rail);
+      }
+      for (const sx of [-B, B]) {
+        const rail = new T.Mesh(new T.BoxGeometry(.12, .12, 6.2), mats.iron);
+        rail.position.set(sx, 6.15, mid);
+        group.add(rail);
+      }
+      for (let k = -2; k <= 2; k++) {
+        const off = mid + k * 1.15;
+        for (const sz of [-B, B]) {
+          const spear = new T.Mesh(new T.CylinderGeometry(.04, .05, 1.35, 6), mats.iron);
+          spear.position.set(off, 5.85, sz);
+          group.add(spear);
+        }
+        for (const sx of [-B, B]) {
+          const spear = new T.Mesh(new T.CylinderGeometry(.04, .05, 1.35, 6), mats.iron);
+          spear.position.set(sx, 5.85, off);
+          group.add(spear);
+        }
+      }
+    }
   }
 
   // =========================================================================
   // 2. CENTER LANDMARK: RUINED RED CATHEDRAL NAVE (破损红教堂中殿)
   // =========================================================================
+  // Vaulted open-sky pointed Gothic ceiling ribs spanning across the Red Cathedral Nave
+  for (const rz of [-10.2, -4.6, 4.6, 10.2]) {
+    addGothicArch(0, rz, 28.0, 7.6, .62, 0, mats.trimStone);
+  }
+
   // West & East Red-Brick Nave Walls with 5.4m central pointed archways (z in [-2.7, 2.7] open!)
   for (const sx of [-14.5, 14.5]) {
     addBox(sx, 0, -9.2, 1.6, 7.6, 12.6, mats.redBrick, { tag: 'brick', radar: 'wall' });
@@ -244,7 +275,7 @@ export function createGothicArena(scene, mats) {
 
     // Glowing Gothic lancet stained-glass windows inset along the nave walls
     for (const wz of [-10.5, -6.5, 6.5, 10.5]) {
-      const win = new T.Mesh(new T.BoxGeometry(1.72, 3.4, 1.35), mats.stainedGlass);
+      const win = new T.Mesh(new T.BoxGeometry(1.72, 3.4, 1.35), mats.stainedGlassLancet || mats.stainedGlass);
       win.position.set(sx, 4.4, wz);
       group.add(win);
       const frame = new T.Mesh(new T.BoxGeometry(1.82, .24, 1.65), mats.trimStone);
@@ -275,13 +306,18 @@ export function createGothicArena(scene, mats) {
     group.add(gable);
 
     // Iconic Illuminated Stained-Glass Rose Window cleanly framed above the stone cornice!
-    const rose = new T.Mesh(new T.CylinderGeometry(2.15, 2.15, 1.88, 22), mats.stainedGlass);
+    const rose = new T.Mesh(new T.CylinderGeometry(2.15, 2.15, 1.88, 24), mats.stainedGlassRose || mats.stainedGlass);
     rose.rotation.x = Math.PI / 2;
     rose.position.set(0, 9.15, sz);
     group.add(rose);
-    const roseRing = new T.Mesh(new T.TorusGeometry(2.22, .20, 8, 22), mats.trimStone);
+    const roseRing = new T.Mesh(new T.TorusGeometry(2.22, .20, 8, 24), mats.trimStone);
     roseRing.position.set(0, 9.15, sz + (sz > 0 ? .92 : -.92));
     group.add(roseRing);
+
+    // Warm crimson/gold stained-glass bounce light inside the cathedral nave
+    const roseLight = new T.PointLight('#f27a63', 26, 26, 1.5);
+    roseLight.position.set(0, 8.6, sz + (sz > 0 ? -2.2 : 2.2));
+    group.add(roseLight);
 
     // Roofline cross pinnacle
     const cV = new T.Mesh(new T.BoxGeometry(.24, 2.4, .24), mats.iron);
@@ -300,6 +336,48 @@ export function createGothicArena(scene, mats) {
   addBox(4.95, 2.0, 0, .55, 1.05, 7.6, mats.trimStone, { tag: 'stone' });
   // Altar stone relic centerpiece (peek cover on top of platform)
   addBox(0, 2.0, 0, 2.4, 1.1, 1.4, mats.tombStone, { tag: 'stone', radar: 'cover' });
+
+  // Crimson cathedral velvet runner carpet on top of Altar Sanctuary & gold chalice cross
+  const altarCarpet = new T.Mesh(new T.BoxGeometry(2.6, .04, 7.8), mats.crimsonCarpet || mats.redBrick);
+  altarCarpet.position.set(0, 2.02, 0);
+  altarCarpet.receiveShadow = true;
+  group.add(altarCarpet);
+
+  const relicCrossV = new T.Mesh(new T.BoxGeometry(.12, .68, .12), mats.goldRelic || mats.trimStone);
+  relicCrossV.position.set(0, 3.44, 0);
+  const relicCrossH = new T.Mesh(new T.BoxGeometry(.42, .11, .11), mats.goldRelic || mats.trimStone);
+  relicCrossH.position.set(0, 3.55, 0);
+  group.add(relicCrossV, relicCrossH);
+
+  // 6 flickering wax candles around the Altar centerpiece + warm candle point light
+  const candleFlames = [];
+  for (const [cx, cz] of [[-0.95, -0.45], [-0.95, 0.45], [0.95, -0.45], [0.95, 0.45], [-0.55, 0], [0.55, 0]]) {
+    const wax = new T.Mesh(new T.CylinderGeometry(.045, .052, .32, 8), mats.candleWax || mats.trimStone);
+    wax.position.set(cx, 3.26, cz);
+    const flame = new T.Mesh(new T.SphereGeometry(.055, 6, 6), mats.candleFlame || mats.lanternGlow);
+    flame.scale.set(.75, 1.65, .75);
+    flame.position.set(cx, 3.48, cz);
+    group.add(wax, flame);
+    candleFlames.push({ flame, baseY: 3.48, phase: cx * 3.1 + cz * 4.7 });
+  }
+  const altarLight = new T.PointLight('#ffaa48', 22, 18, 1.5);
+  altarLight.position.set(0, 3.85, 0);
+  group.add(altarLight);
+  lanterns.push({ light: altarLight, glass: null, baseIntensity: 22, phase: 1.7 });
+
+  // Volumetric slanted Moonbeam God-Rays streaming from the Rose Windows & Cathedral Vaults
+  if (mats.moonBeamMat) {
+    for (const [bx, by, bz, w, h, rx, ry, rz] of [
+      [-1.5, 6.2, 6.8, 5.2, 11.5, -0.42, 0.22, -0.14],
+      [ 1.5, 6.2, -6.8, 5.2, 11.5,  0.42, -0.22, 0.14],
+      [ 0.0, 5.8, 0.0, 6.4, 10.5,  0.24, 0.35, -0.18],
+    ]) {
+      const beam = new T.Mesh(new T.PlaneGeometry(w, h), mats.moonBeamMat);
+      beam.position.set(bx, by, bz);
+      beam.rotation.set(rx, ry, rz);
+      group.add(beam);
+    }
+  }
 
   // Weathered Wooden Church Pews inside the Nave (waist-high jumpable FPS cover!)
   for (const [px, pz] of [[-9.4, -7.8], [-9.4, 7.8], [9.4, -7.8], [9.4, 7.8]]) {
@@ -604,12 +682,62 @@ export function createGothicArena(scene, mats) {
     { x: 4.2, z: -32.8, yaw: Math.PI }
   ];
 
+  // =========================================================================
+  // 8. GPU ATMOSPHERIC PARTICLES (Drifting Cemetery Mist + Floating Embers/Motes)
+  // =========================================================================
+  const emberCount = 110;
+  const emberGeo = new T.BufferGeometry();
+  const emberPos = new Float32Array(emberCount * 3);
+  const emberCol = new Float32Array(emberCount * 3);
+  const emberPhase = new Float32Array(emberCount);
+  for (let i = 0; i < emberCount; i++) {
+    emberPos[i * 3]     = ((i * 37) % 64) - 32;
+    emberPos[i * 3 + 1] = 0.6 + ((i * 19) % 75) / 10;
+    emberPos[i * 3 + 2] = ((i * 53) % 64) - 32;
+    emberPhase[i] = i * 0.73;
+    const isWarm = (i % 3 !== 0);
+    emberCol[i * 3]     = isWarm ? 1.0 : 0.68;
+    emberCol[i * 3 + 1] = isWarm ? 0.74 : 0.86;
+    emberCol[i * 3 + 2] = isWarm ? 0.38 : 1.0;
+  }
+  emberGeo.setAttribute('position', new T.BufferAttribute(emberPos, 3));
+  emberGeo.setAttribute('color', new T.BufferAttribute(emberCol, 3));
+  const emberMat = new T.PointsMaterial({
+    size: 0.34,
+    map: mats.moteTex || null,
+    vertexColors: true,
+    transparent: true,
+    opacity: 0.82,
+    blending: T.AdditiveBlending,
+    depthWrite: false,
+  });
+  const emberPoints = new T.Points(emberGeo, emberMat);
+  group.add(emberPoints);
+
   function updateAtmosphere(time) {
     for (const l of lanterns) {
       if (l.light) {
-        l.light.intensity = l.baseIntensity + Math.sin(time * 5.2 + l.phase) * 1.1 + Math.sin(time * 13.7 + l.phase * 2) * .45;
+        l.light.intensity = l.baseIntensity + Math.sin(time * 5.2 + l.phase) * 1.6 + Math.sin(time * 13.7 + l.phase * 2) * .65;
       }
     }
+    for (const c of candleFlames) {
+      c.flame.position.y = c.baseY + Math.sin(time * 9.5 + c.phase) * 0.015;
+      const s = 0.72 + Math.sin(time * 14.2 + c.phase) * 0.12;
+      c.flame.scale.set(s, 1.55 + Math.cos(time * 11.3 + c.phase) * 0.22, s);
+    }
+    const posAttr = emberGeo.attributes.position;
+    for (let i = 0; i < emberCount; i++) {
+      const ph = emberPhase[i];
+      let y = posAttr.getY(i) + 0.008;
+      if (y > 8.5) y = 0.5;
+      posAttr.setXYZ(
+        i,
+        posAttr.getX(i) + Math.sin(time * 0.9 + ph) * 0.006,
+        y,
+        posAttr.getZ(i) + Math.cos(time * 0.8 + ph) * 0.006
+      );
+    }
+    posAttr.needsUpdate = true;
   }
 
   return {

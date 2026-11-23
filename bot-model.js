@@ -36,20 +36,20 @@ export function createBotModel(team, shadowTex) {
   shadow.position.y = .035;
   root.add(shadow);
 
-  const coatMat = new T.MeshStandardMaterial({ color: isEnemy ? '#3a2027' : '#1b4357', roughness: .78, metalness: .12 });
-  const vestMat = new T.MeshStandardMaterial({ color: isEnemy ? '#231b1f' : '#182834', roughness: .72, metalness: .22 });
+  const coatMat = new T.MeshStandardMaterial({ color: isEnemy ? '#3a2027' : '#1b4357', roughness: .72, metalness: .16 });
+  const vestMat = new T.MeshStandardMaterial({ color: isEnemy ? '#231b1f' : '#182834', roughness: .62, metalness: .32 });
   const accentMat = new T.MeshStandardMaterial({
     color: isEnemy ? '#ff5244' : '#58dcff',
     emissive: new T.Color(isEnemy ? '#ff3a2b' : '#28b8e8'),
-    emissiveIntensity: .85,
-    roughness: .35
+    emissiveIntensity: 1.75,
+    roughness: .28
   });
-  const visorMat = new T.MeshBasicMaterial({ color: isEnemy ? '#ff6f52' : '#7ae8ff' });
-  const helmMat = new T.MeshStandardMaterial({ color: isEnemy ? '#281d22' : '#1d2d3a', roughness: .52, metalness: .35 });
-  const pantsMat = new T.MeshStandardMaterial({ color: '#1f252c', roughness: .86 });
-  const bootMat = new T.MeshStandardMaterial({ color: '#14171a', roughness: .78, metalness: .15 });
-  const gunMat = new T.MeshStandardMaterial({ color: '#2b3138', roughness: .42, metalness: .72 });
-  const flashMat = new T.MeshBasicMaterial({ color: '#ffd98a', transparent: true, opacity: .95 });
+  const visorMat = new T.MeshBasicMaterial({ color: new T.Color(isEnemy ? '#ff6f52' : '#7ae8ff').multiplyScalar(2.2) });
+  const helmMat = new T.MeshStandardMaterial({ color: isEnemy ? '#281d22' : '#1d2d3a', roughness: .42, metalness: .48 });
+  const pantsMat = new T.MeshStandardMaterial({ color: '#1f252c', roughness: .82 });
+  const bootMat = new T.MeshStandardMaterial({ color: '#14171a', roughness: .68, metalness: .25 });
+  const gunMat = new T.MeshStandardMaterial({ color: '#2b3138', roughness: .36, metalness: .78 });
+  const flashMat = new T.MeshBasicMaterial({ color: new T.Color(2.6, 2.0, 1.1), transparent: true, opacity: .95 });
 
   // Pelvis
   const pelvis = new T.Group();
@@ -74,6 +74,18 @@ export function createBotModel(team, shadowTex) {
   plate.position.set(0, .24, -.01);
   torso.add(plate);
 
+  // Tactical chest magazine pouches + armored backpack with glowing HDR battery core
+  for (const px of [-.085, 0, .085]) {
+    const pouch = box(.065, .11, .045, helmMat);
+    pouch.position.set(px, .18, -.14);
+    torso.add(pouch);
+  }
+  const pack = box(.22, .26, .11, vestMat);
+  pack.position.set(0, .25, .15);
+  const packCore = box(.08, .16, .03, accentMat);
+  packCore.position.set(0, .25, .205);
+  torso.add(pack, packCore);
+
   // High-contrast glowing chest/back core strips so friend/foe is readable instantly from any angle
   const chestStrip = box(.22, .055, .26, accentMat);
   chestStrip.position.set(0, .31, -.01);
@@ -88,7 +100,7 @@ export function createBotModel(team, shadowTex) {
   tailR.rotation.x = .15;
   torso.add(tailL, tailR);
 
-  // Head & Tactical Gothic Helmet with Glowing Visor
+  // Head & Tactical Gothic Helmet with Glowing Visor & Armored Brow Guard
   const headGroup = new T.Group();
   headGroup.position.set(0, .48, 0);
   torso.add(headGroup);
@@ -97,6 +109,10 @@ export function createBotModel(team, shadowTex) {
   helm.position.set(0, .17, 0);
   helm.scale.set(.96, 1.05, 1.04);
   headGroup.add(helm);
+
+  const brow = box(.22, .036, .14, helmMat);
+  brow.position.set(0, .225, -.08);
+  headGroup.add(brow);
 
   const crest = box(.05, .07, .24, accentMat);
   crest.position.set(0, .30, .01);
@@ -111,8 +127,10 @@ export function createBotModel(team, shadowTex) {
     const sh = new T.Group();
     sh.position.set(side * .215, .38, 0);
     torso.add(sh);
-    const pauldron = new T.Mesh(new T.SphereGeometry(.075, 8, 6), accentMat);
-    sh.add(pauldron);
+    const pauldron = new T.Mesh(new T.SphereGeometry(.078, 8, 6), accentMat);
+    const shoulderPlate = box(.11, .045, .14, helmMat);
+    shoulderPlate.position.set(side * .02, .035, 0);
+    sh.add(pauldron, shoulderPlate);
     const upper = capsule(.052, .20, coatMat);
     upper.position.set(0, -.13, 0);
     sh.add(upper);
@@ -133,6 +151,8 @@ export function createBotModel(team, shadowTex) {
   rifle.rotation.x = -Math.PI / 2;
   rightArm.elbow.add(rifle);
   const rBody = box(.06, .11, .52, gunMat);
+  const rSight = box(.042, .045, .07, accentMat);
+  rSight.position.set(0, .075, -.04);
   const rBarrel = new T.Mesh(new T.CylinderGeometry(.016, .018, .32, 6), gunMat);
   rBarrel.rotation.x = Math.PI / 2;
   rBarrel.position.set(0, .02, -.38);
@@ -142,9 +162,9 @@ export function createBotModel(team, shadowTex) {
   const flash = new T.Mesh(new T.OctahedronGeometry(.14, 0), flashMat);
   flash.position.set(0, .02, -.56);
   flash.visible = false;
-  rifle.add(rBody, rBarrel, rMag, flash);
+  rifle.add(rBody, rSight, rBarrel, rMag, flash);
 
-  // Legs
+  // Legs with armored knee guards
   function makeLeg(side) {
     const hipJ = new T.Group();
     hipJ.position.set(side * .095, -.02, 0);
@@ -155,6 +175,9 @@ export function createBotModel(team, shadowTex) {
     const knee = new T.Group();
     knee.position.set(0, -.39, 0);
     hipJ.add(knee);
+    const kneePad = box(.095, .095, .06, helmMat);
+    kneePad.position.set(0, -.02, -.06);
+    knee.add(kneePad);
     const shin = capsule(.058, .28, pantsMat);
     shin.position.set(0, -.19, 0);
     knee.add(shin);
